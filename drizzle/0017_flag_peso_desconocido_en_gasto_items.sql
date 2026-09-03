@@ -1,0 +1,1 @@
+ALTER TABLE `gasto_items` ADD `es_peso_desconocido` integer DEFAULT false NOT NULL;

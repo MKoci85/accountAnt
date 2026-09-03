@@ -64,6 +64,10 @@ export function LineaGastoFila({
   const esProvisoria = linea.item.id < 0;
   const esGenericaEditable = linea.genericaEditable === true;
   const editableComoTicket = esProvisoria || esGenericaEditable;
+  const sinPeso = linea.esPesoDesconocido;
+  const puedeNoSaberElPeso =
+    linea.item.nombre !== ITEM_PAGO_TARJETA &&
+    (linea.unidad !== "un" || sinPeso);
   return (
     <div
       className="flex flex-col gap-2 px-5 py-3.5 md:grid md:grid-cols-[1fr_140px_80px_110px_120px_28px] md:items-center md:gap-3"
@@ -148,11 +152,13 @@ export function LineaGastoFila({
               Se vende por
               <Select
                 value={linea.unidad}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const unidad = normalizarUnidad(e.target.value);
                   actualizarLinea(linea.key, {
-                    unidad: normalizarUnidad(e.target.value),
-                  })
-                }
+                    unidad,
+                    ...(unidad === "un" ? { esPesoDesconocido: false } : {}),
+                  });
+                }}
                 className="h-auto w-auto rounded-md px-1.5 py-0.5 text-[11px]"
               >
                 {UNIDADES.map((u) => (
@@ -202,7 +208,7 @@ export function LineaGastoFila({
         htmlFor={`cantidad-${linea.key}`}
         className="text-[11px] font-medium text-muted-foreground md:hidden"
       >
-        {ETIQUETA_CANTIDAD[linea.unidad]}
+        {sinPeso ? "Peso" : ETIQUETA_CANTIDAD[linea.unidad]}
       </label>
       <Input
         id={`cantidad-${linea.key}`}
@@ -210,14 +216,16 @@ export function LineaGastoFila({
         onWheel={(e) => e.currentTarget.blur()}
         min={linea.unidad === "un" ? 1 : 0}
         step={linea.unidad === "un" ? 1 : 0.001}
-        value={linea.cantidad}
-        disabled={linea.bloqueada}
+        value={sinPeso ? "" : linea.cantidad}
+        disabled={linea.bloqueada || sinPeso}
         onChange={(e) =>
           actualizarLinea(linea.key, {
             cantidad: Number(e.target.value) || 0,
           })
         }
-        placeholder={linea.unidad === "un" ? "1" : "0,165"}
+        placeholder={
+          sinPeso ? "sin dato" : linea.unidad === "un" ? "1" : "0,165"
+        }
         className="h-8 w-full text-[13px]"
       />
       </div>
@@ -226,7 +234,7 @@ export function LineaGastoFila({
         htmlFor={`precio-${linea.key}`}
         className="text-[11px] font-medium text-muted-foreground md:hidden"
       >
-        {ETIQUETA_PRECIO[linea.unidad]}
+        {sinPeso ? "Total pagado" : ETIQUETA_PRECIO[linea.unidad]}
       </label>
       <Input
         id={`precio-${linea.key}`}
@@ -242,11 +250,11 @@ export function LineaGastoFila({
           })
         }
         placeholder={
-          linea.unidad === "un" ? "$" : `$ por ${linea.unidad}`
+          sinPeso || linea.unidad === "un" ? "$" : `$ por ${linea.unidad}`
         }
         className="h-8 w-full text-[13px]"
       />
-      {linea.unidad !== "un" && montoDeLinea(linea.precio) > 0 && (
+      {!sinPeso && linea.unidad !== "un" && montoDeLinea(linea.precio) > 0 && (
         <span className="text-[10.5px] text-muted-foreground">
           ={" "}
           {formatearMonto(
@@ -266,7 +274,35 @@ export function LineaGastoFila({
         >
           <BadgeLinea tipo="hormiga" activo={linea.esHormiga} />
         </button>
-        {linea.item.nombre !== ITEM_PAGO_TARJETA &&
+        {puedeNoSaberElPeso && (
+          <button
+            type="button"
+            aria-pressed={sinPeso}
+            disabled={linea.bloqueada}
+            title="El ticket no dice cuánto pesaba: se registra el gasto pero queda fuera de la comparación de precios"
+            onClick={() =>
+              actualizarLinea(linea.key, {
+                esPesoDesconocido: !sinPeso,
+                cantidad: 1,
+                ...(sinPeso
+                  ? {}
+                  : {
+                      esSobreprecio: false,
+                      sobreprecioManual: true,
+                      esPrecioBase: false,
+                    }),
+              })
+            }
+          >
+            <BadgeLinea
+              tipo="pesoDesconocido"
+              activo={sinPeso}
+              etiquetaInactiva="¿No sabés el peso?"
+            />
+          </button>
+        )}
+        {!sinPeso &&
+          linea.item.nombre !== ITEM_PAGO_TARJETA &&
           linea.item.id > 0 && (() => {
             const caro = sobreprecioDeLinea(linea);
             const referencia = referenciaDeLinea(linea);
@@ -295,7 +331,7 @@ export function LineaGastoFila({
               </>
             );
           })()}
-        {(sobreprecioDeLinea(linea) || linea.esPrecioBase) && (
+        {!sinPeso && (sobreprecioDeLinea(linea) || linea.esPrecioBase) && (
           <button
             type="button"
             aria-pressed={linea.esPrecioBase}

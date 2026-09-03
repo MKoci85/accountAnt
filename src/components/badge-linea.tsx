@@ -1,11 +1,16 @@
 import { Badge } from "@/components/ui/badge";
 
-export type TipoBadgeLinea = "hormiga" | "sobreprecio" | "precioBase";
+export type TipoBadgeLinea =
+  | "hormiga"
+  | "sobreprecio"
+  | "precioBase"
+  | "pesoDesconocido";
 
 const ESTILOS: Record<TipoBadgeLinea, string> = {
   hormiga: "bg-destructive/10 text-destructive",
   sobreprecio: "bg-destructive/15 text-destructive/80",
   precioBase: "bg-primary/15 text-primary",
+  pesoDesconocido: "bg-amber-500/15 text-amber-500",
 };
 
 const ESTILO_NECESARIO = "bg-accent text-accent-foreground";
@@ -14,6 +19,7 @@ const ETIQUETAS: Record<TipoBadgeLinea, string> = {
   hormiga: "Hormiga",
   sobreprecio: "Sobreprecio",
   precioBase: "Subió de precio",
+  pesoDesconocido: "Sin peso",
 };
 
 export function BadgeLinea({

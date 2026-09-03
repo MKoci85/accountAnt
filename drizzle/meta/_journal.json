@@ -113,6 +113,20 @@
       "when": 1788296867855,
       "tag": "0015_formato_proveedores_cfe",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1788400000000,
+      "tag": "0016_seed_taface_ucfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788405794197,
+      "tag": "0017_lame_venus",
+      "breakpoints": true
     }
   ]
 }

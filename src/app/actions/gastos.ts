@@ -36,6 +36,7 @@ export type NuevoGastoItem = {
   esSobreprecio?: boolean;
   sobreprecioResuelto?: boolean;
   esPrecioBase?: boolean;
+  esPesoDesconocido?: boolean;
 };
 
 async function obtenerPreciosMinimos(
@@ -62,6 +63,7 @@ async function obtenerPreciosMinimos(
       precio: gastoItems.precio,
       unidad: gastoItems.unidad,
       esPrecioBase: gastoItems.esPrecioBase,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
       fecha: gastos.fecha,
     })
     .from(gastoItems)
@@ -71,7 +73,7 @@ async function obtenerPreciosMinimos(
   const minimos = new Map<string, number>();
   const basesPorItem = new Map<string, { precio: number; fecha: string }>();
   for (const fila of filas) {
-    if (fila.itemCatalogoId == null) continue;
+    if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
     const clave = claveReferencia(fila.itemCatalogoId, normalizarUnidad(fila.unidad));
     const minimoActual = minimos.get(clave);
     if (minimoActual === undefined || fila.precio < minimoActual) {
@@ -123,6 +125,7 @@ async function conSobreprecioDetectado(
   const margen = await leerMargenSobreprecioPeso();
 
   return items.map((item) => {
+    if (item.esPesoDesconocido) return { ...item, esSobreprecio: false };
     if (item.esPrecioBase) return { ...item, esSobreprecio: false };
     if (item.itemCatalogoId != null && item.itemCatalogoId === idPagoTarjeta) {
       return { ...item, esSobreprecio: false };
@@ -190,6 +193,7 @@ export async function crearGasto(datos: {
             esHormiga: item.esHormiga ?? false,
             esSobreprecio: item.esSobreprecio,
             esPrecioBase: item.esPrecioBase ?? false,
+            esPesoDesconocido: item.esPesoDesconocido ?? false,
           }))
         )
         .run();
@@ -242,6 +246,7 @@ export async function editarGasto(
           esHormiga: item.esHormiga ?? false,
           esSobreprecio: item.esSobreprecio,
           esPrecioBase: item.esPrecioBase ?? false,
+          esPesoDesconocido: item.esPesoDesconocido ?? false,
         }))
       )
       .run();
@@ -349,6 +354,7 @@ export type GastoDetalle = {
     esHormiga: boolean;
     esSobreprecio: boolean;
     esPrecioBase: boolean;
+    esPesoDesconocido: boolean;
   }[];
 };
 
@@ -388,6 +394,7 @@ export async function obtenerGasto(id: number): Promise<GastoDetalle> {
       esHormiga: gastoItems.esHormiga,
       esSobreprecio: gastoItems.esSobreprecio,
       esPrecioBase: gastoItems.esPrecioBase,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
     })
     .from(gastoItems)
     .leftJoin(itemsCatalogo, eq(itemsCatalogo.id, gastoItems.itemCatalogoId))

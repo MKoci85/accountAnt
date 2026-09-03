@@ -1,6 +1,7 @@
 export const FORMATOS_PROVEEDOR_CFE = [
   "scanntech",
   "taface",
+  "ucfe",
   "sicfe",
   "otro",
 ] as const;
@@ -25,6 +26,12 @@ export const PROCESADORES_CONOCIDOS: Procesador[] = [
     nombre: "Taface",
     soportado: true,
     urlEjemplo: "https://consulta.taface.com.uy/wpcomprobanteview.aspx",
+  },
+  {
+    id: "ucfe",
+    nombre: "uCFE (Uruware)",
+    soportado: true,
+    urlEjemplo: "https://www.ucfe.com.uy/ConsultaCfe/ConsultarCFE.aspx",
   },
   { id: "sicfe", nombre: "SICFE / FEMI", soportado: false },
 ];

@@ -102,6 +102,7 @@ async function obtenerReferenciasPrecio() {
       itemCatalogoId: gastoItems.itemCatalogoId,
       precio: gastoItems.precio,
       esPrecioBase: gastoItems.esPrecioBase,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
       fecha: gastos.fecha,
       emisorNombre: emisores.nombre,
       unidad: gastoItems.unidad,
@@ -117,7 +118,7 @@ async function obtenerReferenciasPrecio() {
     { precio: number; fecha: string; emisorNombre: string; unidad: UnidadMedida }
   >();
   for (const fila of filas) {
-    if (fila.itemCatalogoId == null) continue;
+    if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
     const unidad = normalizarUnidad(fila.unidad);
     const clave = claveReferencia(fila.itemCatalogoId, unidad);
 

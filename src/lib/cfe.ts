@@ -1,5 +1,6 @@
 import { leerUrlDgi } from "@/lib/config-server";
 import type { FormatoProveedorCfe } from "@/lib/procesadores";
+import { extractText, getDocumentProxy } from "unpdf";
 
 export type DatosQR = {
   ruc: string;
@@ -191,6 +192,8 @@ export async function consultarProcesador(
       return consultarScanntech(urlBase, datos);
     case "taface":
       return consultarTaface(urlBase, datos);
+    case "ucfe":
+      return consultarUcfe(urlBase, datos);
     default:
       throw new Error(
         "Este proveedor de CFE todavía no tiene consulta automática implementada"
@@ -402,4 +405,145 @@ function campoTaface(html: string, id: string): string | null {
   const match = html.match(new RegExp(`id="${id}"[^>]*>([^<]*)<`));
   const texto = match?.[1]?.trim();
   return texto ? texto : null;
+}
+
+async function consultarUcfe(
+  urlBase: string,
+  datos: DatosQR
+): Promise<DetalleComprobante> {
+  const urlConsulta = `${urlBase}?rut=${encodeURIComponent(datos.ruc)}`;
+
+  const resFormulario = await fetch(urlConsulta);
+  if (!resFormulario.ok) {
+    throw new Error(`El procesador respondió ${resFormulario.status}`);
+  }
+  const cookie = resFormulario.headers.getSetCookie()[0]?.split(";")[0] ?? "";
+  const htmlFormulario = await resFormulario.text();
+
+  const leerCampo = (id: string): string => {
+    const match = htmlFormulario.match(new RegExp(`id="${id}" value="([^"]*)"`));
+    if (!match) {
+      throw new Error("No se pudo leer el formulario de uCFE");
+    }
+    return match[1];
+  };
+
+  const body = new URLSearchParams({
+    __LASTFOCUS: "",
+    __EVENTTARGET: "search",
+    __EVENTARGUMENT: "",
+    __VIEWSTATE: leerCampo("__VIEWSTATE"),
+    __VIEWSTATEGENERATOR: leerCampo("__VIEWSTATEGENERATOR"),
+    __EVENTVALIDATION: leerCampo("__EVENTVALIDATION"),
+    rut: datos.ruc,
+    type: datos.tipoCfe,
+    serie: datos.serie,
+    number: datos.numero,
+    monto: String(Math.round(Number(datos.monto.replace(",", ".")))),
+    codigoSeguridad: datos.hash.slice(0, 6),
+  });
+
+  const resBusqueda = await fetch(urlConsulta, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Cookie: cookie,
+    },
+    body: body.toString(),
+    redirect: "follow",
+  });
+  if (!resBusqueda.ok) {
+    throw new Error(`El procesador respondió ${resBusqueda.status}`);
+  }
+  const htmlResultado = await resBusqueda.text();
+
+  if (/No se ha encontrado el CFE indicado/i.test(htmlResultado)) {
+    throw new Error("Comprobante no encontrado en uCFE");
+  }
+  if (/El código de seguridad no corresponde/i.test(htmlResultado)) {
+    throw new Error("El código de seguridad del comprobante no corresponde");
+  }
+
+  const emisorNombre =
+    htmlResultado.match(/<h3>([^<]+?)\s*-\s*RUT:/)?.[1]?.trim() ??
+    "Comercio desconocido";
+
+  const totalMatch = htmlResultado.match(/Monto total a pagar:\s*([\d.,]+)/);
+  const total = totalMatch ? Number(totalMatch[1].replace(",", ".")) : null;
+
+  const monedaTexto = htmlResultado
+    .match(/Moneda:\s*([^<]+?)(?:<br|$)/)?.[1]
+    ?.trim();
+  const moneda = mapearMonedaUcfe(monedaTexto);
+
+  const urlPdf = urlBase.replace(/[^/]*$/, "DescargarPDF.aspx");
+  const resPdf = await fetch(urlPdf, { headers: { Cookie: cookie } });
+  if (!resPdf.ok || !(resPdf.headers.get("content-type") ?? "").includes("application/pdf")) {
+    return { emisorNombre, direccion: null, items: [], total, moneda };
+  }
+
+  const bufferPdf = await resPdf.arrayBuffer();
+  const pdf = await getDocumentProxy(new Uint8Array(bufferPdf));
+  const { text } = await extractText(pdf, { mergePages: false });
+  const items = parsearItemsPdfUcfe(text.join("\n"));
+
+  return { emisorNombre, direccion: null, items, total, moneda };
+}
+
+function mapearMonedaUcfe(texto: string | undefined): string | null {
+  if (!texto) return null;
+  const normalizado = texto.toLowerCase();
+  if (normalizado.includes("uruguay")) return "UYU";
+  if (normalizado.includes("dólar") || normalizado.includes("dolar")) return "USD";
+  return texto;
+}
+
+const ENCABEZADO_ITEMS_UCFE =
+  /Descripci[oó]n\s+Uni\s+\*\s+P\.?\s*Unitario\s*\$?\s+Desc\s+Rec\s+Cantidad\s+Importe\s*\$?/i;
+
+const FILA_ITEM_UCFE =
+  /^(UN|KG|LT|L|GR|ML|CC)\s+\d+\s+([\d.,]+)\s+[\d.,]+\s+[\d.,]+\s+(\d+(?:[.,]\d+)?)\s+([\d.,]+)$/i;
+
+export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
+  const lineas = texto
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const inicio = lineas.findIndex((l) => ENCABEZADO_ITEMS_UCFE.test(l));
+  if (inicio === -1) return [];
+
+  const items: ItemComprobante[] = [];
+  let nombreAcumulado: string[] = [];
+
+  for (let i = inicio + 1; i < lineas.length; i++) {
+    const linea = lineas[i];
+    if (/^Medio de pago/i.test(linea)) break;
+
+    const match = linea.match(FILA_ITEM_UCFE);
+    if (!match) {
+      nombreAcumulado.push(linea);
+      continue;
+    }
+
+    const [, um, precioUnitarioCrudo, cantidadCruda, importeCrudo] = match;
+    const { nombre, tamano, unidades } = parsearNombreItem(
+      nombreAcumulado.join(" ")
+    );
+    nombreAcumulado = [];
+
+    const cantidad = Number(cantidadCruda.replace(",", "."));
+    const esPeso = um.toUpperCase() === "KG" && Number.isFinite(cantidad) && cantidad > 0;
+
+    items.push({
+      nombre,
+      tamano,
+      unidades,
+      precio: parsearMontoUY(importeCrudo),
+      pesoTicket: esPeso ? cantidad : null,
+      precioPorKiloTicket: esPeso ? parsearMontoUY(precioUnitarioCrudo) : null,
+    });
+  }
+
+  return items;
 }

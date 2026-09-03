@@ -73,12 +73,15 @@ Reglas:
 
 const PROMPT_EXTRACCION_TICKET = `Extraé el detalle de este ticket o nota de pedido de un comercio uruguayo.
 Devolvé SOLO un objeto JSON, sin texto alrededor, con esta forma:
-{"comercio":"...","fecha":"YYYY-MM-DD","items":[{"nombre":"...","cantidad":1,"precio":1234.56}]}
+{"comercio":"...","fecha":"YYYY-MM-DD","items":[{"nombre":"...","cantidad":1,"peso":null,"precioPorKilo":null,"precio":1234.56}]}
 
 Reglas:
 - Es UNA sola compra: todos los productos van en "items".
 - "precio" es el importe TOTAL de esa línea, no el precio unitario.
 - "cantidad" es cuántas unidades: si el ticket no la aclara, usá 1.
+- "peso" es el peso en KILOS de una línea vendida por balanza (fiambre, quesos, verdura, carne, pan por peso). Convertilo a kilos: "320 g" es 0.32, "1/2 kg" es 0.5, "1,250" de balanza es 1.25. Si la línea no es por peso o el ticket no dice el peso, usá null.
+- "precioPorKilo" es el precio por kilo cuando el ticket lo muestra, en general al lado del peso ("0,320 x 650"). Si no aparece, usá null.
+- En una línea por peso, "cantidad" es 1: el peso va en "peso", nunca en "cantidad".
 - Transcribí el nombre del producto tal como está escrito, sin corregirlo ni expandirlo.
 - Ignorá subtotales, totales y descuentos: solo los productos.
 - Si el ticket no dice el comercio, usá "" (string vacío).
@@ -274,8 +277,44 @@ export async function interpretarEstadoCuentaConIA(
 export type TicketCrudo = {
   comercio: string;
   fecha: string;
-  items: { nombre: string; cantidad: number; precio: number }[];
+  items: {
+    nombre: string;
+    cantidad: number;
+    peso: number | null;
+    precioPorKilo: number | null;
+    precio: number;
+  }[];
 };
+
+function pesoOpcional(valor: unknown): number | null {
+  if (typeof valor === "number") {
+    return Number.isFinite(valor) && valor > 0 ? valor : null;
+  }
+  const texto = String(valor ?? "")
+    .trim()
+    .replace(/\s+/g, "");
+  if (!texto) return null;
+
+  const fraccion = texto.match(/^(\d+)\/(\d+)$/);
+  if (fraccion) {
+    const dividido = Number(fraccion[1]) / Number(fraccion[2]);
+    return Number.isFinite(dividido) && dividido > 0 ? dividido : null;
+  }
+
+  const numero = Number(texto.replace(",", "."));
+  return Number.isFinite(numero) && numero > 0 ? numero : null;
+}
+
+function importeOpcional(valor: unknown): number | null {
+  if (typeof valor === "number") {
+    return Number.isFinite(valor) && valor > 0 ? valor : null;
+  }
+  const texto = String(valor ?? "").trim();
+  if (!texto) return null;
+
+  const numero = Number(texto.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(numero) && numero > 0 ? numero : null;
+}
 
 function validarTicket(crudo: unknown): TicketCrudo | null {
   if (!crudo || typeof crudo !== "object" || Array.isArray(crudo)) return null;
@@ -308,7 +347,13 @@ function validarTicket(crudo: unknown): TicketCrudo | null {
     const cantidad =
       Number.isFinite(cantidadCruda) && cantidadCruda > 0 ? cantidadCruda : 1;
 
-    items.push({ nombre, cantidad, precio });
+    items.push({
+      nombre,
+      cantidad,
+      peso: pesoOpcional(i.peso),
+      precioPorKilo: importeOpcional(i.precioPorKilo),
+      precio,
+    });
   }
 
   if (!items.length) return null;

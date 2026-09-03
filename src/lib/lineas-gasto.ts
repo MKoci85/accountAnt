@@ -23,6 +23,7 @@ export type LineaGasto = {
   esSobreprecio: boolean;
   sobreprecioManual: boolean;
   esPrecioBase: boolean;
+  esPesoDesconocido: boolean;
   bloqueada: boolean;
   genericaEditable?: boolean;
 };
@@ -53,6 +54,14 @@ function camposDesdeTicket(linea: LineaDesdeTicket): {
     };
   }
 
+  if (linea.precioPorKiloTicket && linea.precioPorKiloTicket > 0) {
+    return {
+      cantidad: Number((linea.precio / linea.precioPorKiloTicket).toFixed(3)),
+      precio: linea.precioPorKiloTicket,
+      unidad: "kg",
+    };
+  }
+
   const tamano = parsearTamano(linea.tamanoTicket);
   if (tamano && tamano.unidad !== "un") {
     const piezas = linea.unidadesTicket ?? 1;
@@ -70,8 +79,35 @@ function camposDesdeTicket(linea: LineaDesdeTicket): {
   return { cantidad: 1, precio: linea.precio, unidad: "un" };
 }
 
+function claveAgrupacion(linea: LineaGasto): string {
+  const item =
+    linea.item.id > 0
+      ? `id:${linea.item.id}`
+      : `nombre:${linea.item.nombre.trim().toLowerCase()}`;
+  const precio = montoDeLinea(linea.precio).toFixed(2);
+  const peso = linea.esPesoDesconocido ? "?" : "";
+  return `${item}|${linea.categoriaId}|${linea.unidad}${peso}|${precio}`;
+}
+
+function agruparRepetidas(lineas: LineaGasto[]): LineaGasto[] {
+  const agrupadas = new Map<string, LineaGasto>();
+  for (const linea of lineas) {
+    const clave = claveAgrupacion(linea);
+    const existente = agrupadas.get(clave);
+    if (!existente) {
+      agrupadas.set(clave, linea);
+      continue;
+    }
+    agrupadas.set(clave, {
+      ...existente,
+      cantidad: Number((existente.cantidad + linea.cantidad).toFixed(3)),
+    });
+  }
+  return [...agrupadas.values()];
+}
+
 export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
-  return lineas.map((linea) => {
+  const convertidas = lineas.map((linea) => {
     if (linea.itemCatalogo) {
       return {
         key: `ticket-${linea.itemCatalogo.id}-${Date.now()}-${contadorItemProvisorio--}`,
@@ -83,6 +119,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
         esSobreprecio: false,
         sobreprecioManual: false,
         esPrecioBase: false,
+        esPesoDesconocido: false,
         bloqueada: linea.bloqueada,
       };
     }
@@ -107,9 +144,12 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
       esSobreprecio: false,
       sobreprecioManual: false,
       esPrecioBase: false,
+      esPesoDesconocido: false,
       bloqueada: false,
     };
   });
+
+  return agruparRepetidas(convertidas);
 }
 
 export function lineasDesdeGasto(
@@ -136,6 +176,7 @@ export function lineasDesdeGasto(
     esSobreprecio: item.esSobreprecio,
     sobreprecioManual: false,
     esPrecioBase: item.esPrecioBase,
+    esPesoDesconocido: item.esPesoDesconocido,
     bloqueada: false,
     genericaEditable:
       abrirGenericas && item.itemNombre === ITEM_PAGO_TARJETA,

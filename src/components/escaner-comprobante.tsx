@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import jsQR from "jsqr";
-import { ScanLine, CheckCircle2, AlertTriangle, Lock, Camera, X, ImageUp } from "lucide-react";
+import { ScanLine, CheckCircle2, AlertTriangle, Lock, Camera, ImageUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
   type FormatoProveedorCfe,
 } from "@/lib/procesadores";
 import { formatearMonto } from "@/lib/formato";
+import { VistaCamara } from "@/components/vista-camara";
 import type { categorias, emisores } from "@/db/schema";
 import type { ItemCatalogoConCategoria } from "@/components/nuevo-item-dialog";
 
@@ -282,26 +283,11 @@ export function EscanerComprobante({
       {!resultado && (
         <div className="flex flex-col gap-2.5">
           {camaraActiva ? (
-            <div className="relative overflow-hidden rounded-lg border border-input bg-black">
-              <video
-                ref={videoRef}
-                muted
-                playsInline
-                className="max-h-[55vh] w-full object-contain"
-              />
-              <Button
-                type="button"
-                size="icon"
-                variant="secondary"
-                className="absolute right-2 top-2 h-7 w-7"
-                onClick={detenerCamara}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-              <div className="absolute inset-x-0 bottom-0 bg-black/50 px-3 py-1.5 text-center text-[12px] text-white">
-                Apuntá al QR del comprobante
-              </div>
-            </div>
+            <VistaCamara
+              videoRef={videoRef}
+              indicacion="Apuntá al QR del comprobante"
+              onCerrar={detenerCamara}
+            />
           ) : (
             <div className="grid grid-cols-2 gap-2.5">
               <button

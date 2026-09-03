@@ -229,8 +229,8 @@ async function resolverTicket(ticket: TicketCrudo): Promise<ResultadoTicketIA> {
         precio: item.precio,
         tamano: null,
         unidades: item.cantidad,
-        pesoTicket: null,
-        precioPorKiloTicket: null,
+        pesoTicket: item.peso,
+        precioPorKiloTicket: item.precioPorKilo,
       })
     )
   );

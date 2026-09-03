@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Camera, ImageUp, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Camera, ImageUp, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { interpretarTicket, type ResultadoTicketIA } from "@/app/actions/cfe";
 import type { ProveedorIA } from "@/lib/proveedores-ia";
 import { EsperandoIA, BloqueoIA } from "@/components/esperando-ia";
 import { capturarVideo, prepararImagen, type ImagenParaIA } from "@/lib/subidas";
+import { VistaCamara } from "@/components/vista-camara";
 
 export function LectorTicketIA({
   proveedoresIA,
@@ -177,32 +177,12 @@ export function LectorTicketIA({
           </div>
         </div>
       ) : camaraActiva ? (
-        <div className="flex flex-col gap-2">
-          <div className="relative overflow-hidden rounded-lg border border-input bg-black">
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="max-h-[55vh] w-full object-contain"
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className="absolute right-2 top-2 h-7 w-7"
-              onClick={detenerCamara}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <div className="absolute inset-x-0 bottom-0 bg-black/50 px-3 py-1.5 text-center text-[12px] text-white">
-              Encuadrá el ticket entero, derecho y sin sombras
-            </div>
-          </div>
-          <Button type="button" className="w-full" onClick={handleCapturar}>
-            <Camera className="h-4 w-4" />
-            Sacar la foto
-          </Button>
-        </div>
+        <VistaCamara
+          videoRef={videoRef}
+          indicacion="Encuadrá el ticket entero, derecho y sin sombras"
+          onCerrar={detenerCamara}
+          accion={{ etiqueta: "Sacar la foto", onClick: handleCapturar }}
+        />
       ) : (
         <div className="grid grid-cols-2 gap-2.5">
           <button

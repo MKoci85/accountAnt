@@ -90,6 +90,7 @@ function huellaFormulario(
       l.esHormiga,
       l.esSobreprecio,
       l.esPrecioBase,
+      l.esPesoDesconocido,
     ]),
   ]);
 }
@@ -283,6 +284,7 @@ export function NuevoGastoForm({
         esSobreprecio: false,
         sobreprecioManual: false,
         esPrecioBase: false,
+        esPesoDesconocido: false,
         bloqueada: false,
       },
     ]);
@@ -464,6 +466,7 @@ export function NuevoGastoForm({
   }
 
   function sobreprecioDeLinea(linea: LineaGasto) {
+    if (linea.esPesoDesconocido) return false;
     if (linea.esPrecioBase) return false;
     if (linea.sobreprecioManual) return linea.esSobreprecio;
     if (linea.esSobreprecio) return true;
@@ -540,6 +543,7 @@ export function NuevoGastoForm({
           esSobreprecio: sobreprecioDeLinea(l),
           sobreprecioResuelto: true,
           esPrecioBase: l.esPrecioBase,
+          esPesoDesconocido: l.esPesoDesconocido,
         }));
         if (gastoInicial) {
           await editarGasto(gastoInicial.id, {
