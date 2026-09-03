@@ -1,0 +1,23 @@
+-- Datos base de la app. Hasta ahora se habían cargado a mano, así que una base
+-- recreada desde cero quedaba sin categorías ni el emisor genérico. Los INSERT
+-- son idempotentes (WHERE NOT EXISTS) para poder correrlos sobre una base ya
+-- poblada sin duplicar nada.
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Almacén', 'arroz, fideos, aceite, harina, azucar, yerba, conservas, enlatados' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Almacén');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Frutas y verduras', 'manzana, banana, papa, cebolla, tomate, lechuga, zanahoria, fruta, verdura' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Frutas y verduras');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Carnes y pescados', 'carne, pollo, pescado, asado, milanesa, chorizo, cerdo, nalga' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Carnes y pescados');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Lácteos y huevos', 'leche, queso, yogur, manteca, huevo, crema, dulce de leche' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Lácteos y huevos');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Panificados', 'pan, galleta, bizcocho, factura, tostada, budin' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Panificados');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Snacks y dulces', 'alfajor, chocolate, papas fritas, caramelo, golosina, helado, galletitas' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Snacks y dulces');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Bebidas', 'agua, refresco, cerveza, vino, jugo, coca, gaseosa, cafe, te' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Bebidas');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Hogar', 'detergente, jabon, lavandina, papel higienico, limpieza, esponja, bolsa' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Hogar');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Higiene personal', 'shampoo, pasta dental, desodorante, afeitar, cepillo, toalla' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Higiene personal');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Ropa', 'remera, pantalon, championes, campera, medias, calzado' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Ropa');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Salud', 'farmacia, remedio, medicamento, mutualista, consulta, analisis, ibuprofeno' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Salud');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Transporte', 'omnibus, boleto, stm, nafta, combustible, peaje, telepeaje, taxi, uber, estacionamiento' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Transporte');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Comida fuera de casa', 'restaurante, delivery, pizza, hamburguesa, bar, almuerzo, cantina, pedidosya' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Comida fuera de casa');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Ocio', 'cine, libro, juego, salida, entrada, streaming, paseo' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Ocio');--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "descripcion") SELECT 'Otros', 'varios, sin clasificar' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Otros');--> statement-breakpoint
+INSERT INTO `emisores` ("nombre", "es_generico") SELECT 'Varios', 1 WHERE NOT EXISTS (SELECT 1 FROM `emisores` WHERE "es_generico" = 1);
+--> statement-breakpoint
+INSERT INTO `categorias` ("nombre", "color", "descripcion") SELECT 'Suscripciones', '#8b7fd4', 'streaming, software, apple, anthropic, spotify, netflix, nube, membresia' WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Suscripciones');--> statement-breakpoint
+INSERT INTO `items_catalogo` ("nombre", "categoria_id", "descripcion") SELECT 'Pago con tarjeta', (SELECT "id" FROM `categorias` WHERE "nombre" = 'Almacén' LIMIT 1), 'Compra importada del estado de cuenta, sin detalle de items' WHERE EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Almacén') AND NOT EXISTS (SELECT 1 FROM `items_catalogo` WHERE "nombre" = 'Pago con tarjeta');

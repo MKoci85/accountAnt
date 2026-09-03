@@ -1,0 +1,118 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787703991981,
+      "tag": "0000_esquema_inicial",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787713126923,
+      "tag": "0001_descripcion_en_categorias_e_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788027418199,
+      "tag": "0002_flag_sobreprecio_en_gasto_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788048253606,
+      "tag": "0003_configuracion_cotizaciones_y_alias",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788048254606,
+      "tag": "0004_seed_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788048255606,
+      "tag": "0005_tabla_proveedores_cfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788065708646,
+      "tag": "0006_flag_precio_base_en_gasto_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788066737376,
+      "tag": "0007_unidad_en_gasto_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788095314915,
+      "tag": "0008_seed_proveedores_cfe",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788095314916,
+      "tag": "0009_seed_configuracion_avanzada",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788095314917,
+      "tag": "0010_uppercase_items_catalogo",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788143845560,
+      "tag": "0011_chat_ia",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788146238726,
+      "tag": "0012_uso_ia",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788146239726,
+      "tag": "0013_borrar_ultimo_uso_ia",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788233713112,
+      "tag": "0014_hesitant_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1788296867855,
+      "tag": "0015_formato_proveedores_cfe",
+      "breakpoints": true
+    }
+  ]
+}

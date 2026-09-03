@@ -1,0 +1,1 @@
+ALTER TABLE `gasto_items` ADD `es_sobreprecio` integer DEFAULT false NOT NULL;

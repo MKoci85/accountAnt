@@ -1,0 +1,1 @@
+ALTER TABLE `gasto_items` ADD `unidad` text DEFAULT 'un' NOT NULL;
