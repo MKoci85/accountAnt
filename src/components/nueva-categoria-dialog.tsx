@@ -48,6 +48,9 @@ export function NuevaCategoriaDialog({
   const [nombre, setNombre] = useState(categoriaExistente?.nombre ?? nombreInicial);
   const [color, setColor] = useState(categoriaExistente?.color ?? PALETA_COLORES[0]);
   const [descripcion, setDescripcion] = useState(categoriaExistente?.descripcion ?? "");
+  const [esServicio, setEsServicio] = useState(
+    categoriaExistente?.esServicio ?? false
+  );
   const { error, setError, isPending, enviar } = useEnvioDialog(
     "No se pudo guardar la categoría"
   );
@@ -60,6 +63,7 @@ export function NuevaCategoriaDialog({
       setNombre(categoriaExistente?.nombre ?? nombreInicial);
       setColor(categoriaExistente?.color ?? PALETA_COLORES[0]);
       setDescripcion(categoriaExistente?.descripcion ?? "");
+      setEsServicio(categoriaExistente?.esServicio ?? false);
       setError(null);
     }
     onOpenChange(next);
@@ -73,10 +77,13 @@ export function NuevaCategoriaDialog({
             nombre,
             color,
             descripcion,
+            esServicio,
           })
         );
       } else {
-        onCreada(await crearCategoria(nombre, color, descripcion));
+        onCreada(
+          await crearCategoria({ nombre, color, descripcion, esServicio })
+        );
       }
       onOpenChange(false);
     });
@@ -170,6 +177,23 @@ export function NuevaCategoriaDialog({
           className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
         />
       </CampoFormulario>
+
+      <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 px-3 py-2.5 text-[13px]">
+        <input
+          type="checkbox"
+          checked={esServicio}
+          onChange={(e) => setEsServicio(e.target.checked)}
+          className="mt-0.5 h-3.5 w-3.5 accent-primary"
+        />
+        <span>
+          Es un servicio (no lleva unidad ni cantidad)
+          <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
+            Para consultas médicas, UTE, alquiler o suscripciones: en el
+            formulario de gasto la línea pide solo nombre e importe, y no se
+            compara contra precios anteriores.
+          </span>
+        </span>
+      </label>
     </DialogFormulario>
   );
 }

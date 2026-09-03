@@ -281,7 +281,14 @@ export function CatalogosView({
                     />
                   )}
                   <div>
-                    <div className="text-[13.5px] font-medium">{c.nombre}</div>
+                    <div className="flex items-center gap-1.5 text-[13.5px] font-medium">
+                      {c.nombre}
+                      {c.esServicio && (
+                        <Badge variant="secondary" className="text-[10px]">
+                          Servicio
+                        </Badge>
+                      )}
+                    </div>
                     {c.descripcion && (
                       <div className="mt-0.5 line-clamp-1 text-[11.5px] text-muted-foreground">
                         {c.descripcion}

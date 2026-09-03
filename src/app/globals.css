@@ -182,3 +182,14 @@ select option {
   color: transparent;
   animation: shimmer-texto 1.8s linear infinite;
 }
+/* La hormiga del ícono se pinta como máscara, no como <img>: el PNG original
+   viene en verde neón sobre fondo casi negro, y pegado tal cual en la barra
+   se leería como una calcomanía. Enmascarado, el trazo toma el color que
+   tenga el elemento, así que sigue al tema en vez de competir con él. */
+.marca-hormiga {
+  -webkit-mask: url("/marca-hormiga.png") center / contain no-repeat;
+  mask: url("/marca-hormiga.png") center / contain no-repeat;
+  filter: drop-shadow(
+    0 0 6px color-mix(in oklab, var(--sidebar-primary) 40%, transparent)
+  );
+}

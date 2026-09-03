@@ -37,9 +37,103 @@ const CATEGORIA_SIN_ASIGNAR: Categoria = {
   nombre: "Sin asignar",
   color: null,
   descripcion: null,
+  esServicio: false,
 };
 
 let contadorItemProvisorio = -1;
+
+/**
+ * @returns true si la línea pertenece a una categoría marcada como servicio
+ * (UTE, alquiler, una consulta médica): sin unidad de medida ni cantidad.
+ */
+export function esLineaDeServicio(
+  linea: LineaGasto,
+  categorias: Categoria[]
+): boolean {
+  return categorias.some((c) => c.id === linea.categoriaId && c.esServicio);
+}
+
+/**
+ * Crea la línea vacía del botón "Agregar servicio o concepto": sin ítem de
+ * catálogo, con el nombre a escribir y el importe como únicos campos.
+ */
+export function lineaDeServicioNueva(categoria: Categoria): LineaGasto {
+  return {
+    key: `servicio-${contadorItemProvisorio--}`,
+    item: {
+      id: -1,
+      nombre: "",
+      marca: null,
+      tamano: null,
+      descripcion: null,
+      categoriaId: categoria.id,
+      categoriaNombre: categoria.nombre,
+    },
+    categoriaId: categoria.id,
+    categoriaNombre: categoria.nombre,
+    cantidad: 1,
+    precio: "",
+    unidad: "un",
+    esHormiga: false,
+    esSobreprecio: false,
+    sobreprecioManual: false,
+    esPrecioBase: false,
+    esPesoDesconocido: false,
+    bloqueada: false,
+  };
+}
+
+export type LineaConvertida = {
+  nombre: string;
+  cantidad: number;
+  unidad: UnidadMedida;
+  precio: number;
+  importe: number;
+};
+
+/**
+ * Colapsa a un importe único las líneas de servicio que se hubieran guardado
+ * con cantidad o unidad (por ejemplo un gasto viejo de una categoría marcada
+ * como servicio después). El monto se conserva: 3 × $500 pasa a 1 × $1.500.
+ * @returns Las líneas ya normalizadas y el detalle de las que cambiaron, para
+ * avisarle al usuario antes de que guarde.
+ */
+export function normalizarLineasDeServicio(
+  lineas: LineaGasto[],
+  categorias: Categoria[]
+): { lineas: LineaGasto[]; convertidas: LineaConvertida[] } {
+  const convertidas: LineaConvertida[] = [];
+
+  const normalizadas = lineas.map((linea) => {
+    if (!esLineaDeServicio(linea, categorias)) return linea;
+    if (linea.cantidad === 1 && linea.unidad === "un" && !linea.esPesoDesconocido) {
+      return linea;
+    }
+
+    const precio = montoDeLinea(linea.precio);
+    const importe = linea.esPesoDesconocido
+      ? precio
+      : Number((precio * linea.cantidad).toFixed(2));
+
+    convertidas.push({
+      nombre: linea.item.nombre,
+      cantidad: linea.cantidad,
+      unidad: linea.unidad,
+      precio,
+      importe,
+    });
+
+    return {
+      ...linea,
+      cantidad: 1,
+      unidad: "un" as UnidadMedida,
+      precio: importe,
+      esPesoDesconocido: false,
+    };
+  });
+
+  return { lineas: normalizadas, convertidas };
+}
 
 function camposDesdeTicket(linea: LineaDesdeTicket): {
   cantidad: number;

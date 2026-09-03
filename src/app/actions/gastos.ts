@@ -8,7 +8,7 @@ import {
   emisores,
   itemsCatalogo,
 } from "@/db/schema";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, notFound } from "next/navigation";
 import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
@@ -150,7 +150,7 @@ async function conSobreprecioDetectado(
   });
 }
 
-export async function crearGasto(datos: {
+export type NuevoGastoDatos = {
   emisorId: number;
   fecha: string;
   items: NuevoGastoItem[];
@@ -158,7 +158,18 @@ export async function crearGasto(datos: {
   serie?: string;
   numero?: string;
   montoTotal?: number | null;
-}) {
+  gastoFijoId?: number | null;
+};
+
+/**
+ * Inserta el gasto y sus líneas, con la detección de sobreprecio ya resuelta.
+ * No revalida ni redirige: es el paso común entre el formulario (que navega a
+ * `/gastos`) y el pago de un gasto fijo (que se queda en su pantalla).
+ * @returns El id del gasto creado.
+ */
+export async function guardarGasto(
+  datos: NuevoGastoDatos
+): Promise<{ id: number }> {
   if (!datos.items.length) {
     throw new Error("El gasto necesita al menos un ítem");
   }
@@ -166,7 +177,7 @@ export async function crearGasto(datos: {
   const items = await conSobreprecioDetectado(datos.items, datos.fecha);
 
   try {
-    db.transaction((tx) => {
+    return db.transaction((tx) => {
       const gasto = tx
         .insert(gastos)
         .values({
@@ -176,6 +187,7 @@ export async function crearGasto(datos: {
           serie: datos.serie ?? null,
           numero: datos.numero ?? null,
           montoTotal: datos.montoTotal ?? null,
+          gastoFijoId: datos.gastoFijoId ?? null,
         })
         .returning()
         .get();
@@ -197,6 +209,8 @@ export async function crearGasto(datos: {
           }))
         )
         .run();
+
+      return { id: gasto.id };
     });
   } catch (e) {
     if (e instanceof Error && e.message.includes("UNIQUE")) {
@@ -204,6 +218,10 @@ export async function crearGasto(datos: {
     }
     throw e;
   }
+}
+
+export async function crearGasto(datos: NuevoGastoDatos) {
+  await guardarGasto(datos);
 
   revalidatePath("/gastos");
   revalidatePath("/");

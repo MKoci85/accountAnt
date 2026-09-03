@@ -6,6 +6,9 @@ export const categorias = sqliteTable("categorias", {
   nombre: text("nombre").notNull().unique(),
   color: text("color"),
   descripcion: text("descripcion"),
+  esServicio: integer("es_servicio", { mode: "boolean" })
+    .notNull()
+    .default(false),
 });
 
 export const proveedoresCfe = sqliteTable("proveedores_cfe", {

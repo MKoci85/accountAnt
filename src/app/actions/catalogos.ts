@@ -8,6 +8,7 @@ import {
   itemsCatalogo,
   gastos,
   gastoItems,
+  gastosFijos,
 } from "@/db/schema";
 import { and, asc, eq, like, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -32,12 +33,13 @@ export async function listarCategorias() {
   return db.select().from(categorias).orderBy(asc(categorias.nombre));
 }
 
-export async function crearCategoria(
-  nombre: string,
-  color?: string,
-  descripcion?: string
-) {
-  const nombreLimpio = nombre.trim();
+export async function crearCategoria(datos: {
+  nombre: string;
+  color?: string;
+  descripcion?: string;
+  esServicio?: boolean;
+}) {
+  const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre de la categoría es obligatorio");
 
   try {
@@ -45,8 +47,9 @@ export async function crearCategoria(
       .insert(categorias)
       .values({
         nombre: nombreLimpio,
-        color: color?.trim() || null,
-        descripcion: descripcion?.trim() || null,
+        color: datos.color?.trim() || null,
+        descripcion: datos.descripcion?.trim() || null,
+        esServicio: datos.esServicio ?? false,
       })
       .returning();
 
@@ -62,7 +65,12 @@ export async function crearCategoria(
 
 export async function editarCategoria(
   id: number,
-  datos: { nombre: string; color?: string; descripcion?: string }
+  datos: {
+    nombre: string;
+    color?: string;
+    descripcion?: string;
+    esServicio?: boolean;
+  }
 ) {
   const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre de la categoría es obligatorio");
@@ -74,6 +82,7 @@ export async function editarCategoria(
         nombre: nombreLimpio,
         color: datos.color?.trim() || null,
         descripcion: datos.descripcion?.trim() || null,
+        esServicio: datos.esServicio ?? false,
       })
       .where(eq(categorias.id, id))
       .returning();
@@ -142,6 +151,17 @@ export async function borrarCategoria(id: number) {
   if (enGastoItems) {
     throw new Error(
       "No se puede borrar: hay gastos cargados con esta categoría"
+    );
+  }
+
+  const [enGastosFijos] = await db
+    .select({ nombre: gastosFijos.nombre })
+    .from(gastosFijos)
+    .where(eq(gastosFijos.categoriaId, id))
+    .limit(1);
+  if (enGastosFijos) {
+    throw new Error(
+      `No se puede borrar: la usa el gasto fijo "${enGastosFijos.nombre}"`
     );
   }
 
@@ -590,6 +610,17 @@ export async function borrarEmisor(id: number) {
     .limit(1);
   if (enUso) {
     throw new Error("No se puede borrar: hay gastos cargados con este emisor");
+  }
+
+  const [enGastosFijos] = await db
+    .select({ nombre: gastosFijos.nombre })
+    .from(gastosFijos)
+    .where(eq(gastosFijos.emisorId, id))
+    .limit(1);
+  if (enGastosFijos) {
+    throw new Error(
+      `No se puede borrar: lo usa el gasto fijo "${enGastosFijos.nombre}"`
+    );
   }
 
   await db.delete(emisores).where(eq(emisores.id, id));

@@ -1,0 +1,1 @@
+ALTER TABLE `categorias` ADD `es_servicio` integer DEFAULT false NOT NULL;

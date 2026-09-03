@@ -45,13 +45,16 @@ import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
 import {
   superaReferencia,
   claveReferencia,
+  formatearCantidadConUnidad,
   MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
 } from "@/lib/precios-referencia";
 import { formatearMonto, hoyISO } from "@/lib/formato";
 import {
+  lineaDeServicioNueva,
   lineasDesdeGasto,
   lineasDesdeTicket,
   montoDeLinea,
+  normalizarLineasDeServicio,
   type LineaGasto,
 } from "@/lib/lineas-gasto";
 import { useDebounced } from "@/hooks/use-debounced";
@@ -143,9 +146,13 @@ export function NuevoGastoForm({
   const [resultadosItemRaw, setResultadosItem] = useState<ItemCatalogoConCategoria[]>([]);
   const debouncedItemQuery = useDebounced(itemQuery);
   const buscadorItemRef = useRef<HTMLInputElement | null>(null);
-  const [lineas, setLineas] = useState<LineaGasto[]>(
-    gastoInicial ? lineasDesdeGasto(gastoInicial, revision?.detalle) : []
+  const [inicio] = useState(() =>
+    normalizarLineasDeServicio(
+      gastoInicial ? lineasDesdeGasto(gastoInicial, revision?.detalle) : [],
+      categoriasIniciales
+    )
   );
+  const [lineas, setLineas] = useState<LineaGasto[]>(inicio.lineas);
 
   const [capturaAbierta, setCapturaAbierta] = useState(false);
   const [datosCfe, setDatosCfe] = useState<{
@@ -294,6 +301,17 @@ export function NuevoGastoForm({
     buscadorItemRef.current?.focus();
   }
 
+  function setLineasNormalizadas(nuevas: LineaGasto[]) {
+    setLineas(normalizarLineasDeServicio(nuevas, categoriasList).lineas);
+  }
+
+  function agregarLineaDeServicio() {
+    const categoria =
+      categoriasList.find((c) => c.esServicio) ?? categoriasList[0];
+    if (!categoria) return;
+    setLineas((prev) => [...prev, lineaDeServicioNueva(categoria)]);
+  }
+
   function quitarLinea(key: string) {
     setLineas((prev) => prev.filter((l) => l.key !== key));
   }
@@ -382,13 +400,13 @@ export function NuevoGastoForm({
       numero: datos.numero,
     });
     setFecha(datos.fecha);
-    setLineas(lineasDesdeTicket(datos.lineas));
+    setLineasNormalizadas(lineasDesdeTicket(datos.lineas));
     setTotalComprobante(datos.avisoMoneda ? null : datos.total);
   }
 
   async function handleTicketIAResuelto(ticket: ResultadoTicketIA) {
     setTotalComprobante(null);
-    setLineas(
+    setLineasNormalizadas(
       lineasDesdeTicket(
         ticket.items.map((item) => ({
           nombreTicket: item.nombreTicket,
@@ -423,7 +441,8 @@ export function NuevoGastoForm({
         if (cambios.unidad && cambios.unidad !== l.unidad) {
           actualizada.cantidad = 1;
         }
-        return actualizada;
+        return normalizarLineasDeServicio([actualizada], categoriasList)
+          .lineas[0];
       })
     );
   }
@@ -505,6 +524,15 @@ export function NuevoGastoForm({
     if (!fecha) return "Falta la fecha del gasto.";
     if (!emisorSeleccionado) return "Falta elegir el comercio.";
     if (lineas.length === 0) return "Agregá al menos un ítem.";
+
+    const sinNombre = lineas.filter(
+      (l) => l.item.id <= 0 && !l.item.nombre.trim()
+    );
+    if (sinNombre.length > 0) {
+      return sinNombre.length === 1
+        ? "Falta el nombre de una de las líneas."
+        : `Faltan los nombres de ${sinNombre.length} líneas.`;
+    }
 
     const sinCatalogar = lineas.filter(
       (l) => l.item.id < 0 && l.item.id !== -1
@@ -721,7 +749,7 @@ export function NuevoGastoForm({
             </>
           )}
 
-          <div className="px-5 py-3.5">
+          <div className="flex flex-wrap items-center gap-2 px-5 py-3.5">
             <ComboboxBusqueda
               id="buscador-item-gasto"
               query={itemQuery}
@@ -746,12 +774,43 @@ export function NuevoGastoForm({
               }}
               placeholder="Buscar ítem..."
               inputRef={buscadorItemRef}
-              className="max-w-sm"
+              className="w-full max-w-sm sm:w-auto sm:flex-1"
               inputClassName="h-8 pl-8 text-[13px] ring-2 ring-ring/40"
               panelClassName="top-9"
             />
+            <button
+              type="button"
+              onClick={agregarLineaDeServicio}
+              className="shrink-0 rounded-lg border border-dashed px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground hover:border-solid hover:text-foreground"
+            >
+              + Agregar servicio o concepto
+            </button>
           </div>
         </Card>
+
+        {inicio.convertidas.length > 0 && (
+          <div className="rounded-lg border border-dashed px-4 py-3 text-[12.5px] text-muted-foreground">
+            <p className="font-medium text-foreground">
+              {inicio.convertidas.length === 1
+                ? "Una línea pasó a ser un servicio"
+                : `${inicio.convertidas.length} líneas pasaron a ser servicios`}
+            </p>
+            <p className="mt-1">
+              Su categoría está marcada como servicio, así que ya no llevan
+              cantidad ni unidad: se muestran como un importe único, con el mismo
+              monto de antes. Se guarda así cuando confirmes el gasto.
+            </p>
+            <ul className="mt-1.5 space-y-0.5">
+              {inicio.convertidas.map((c) => (
+                <li key={`${c.nombre}-${c.importe}`}>
+                  {c.nombre || "Sin detalle"}:{" "}
+                  {formatearCantidadConUnidad(c.cantidad, c.unidad)} ×{" "}
+                  {formatearMonto(c.precio)} → {formatearMonto(c.importe)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="flex items-center justify-between px-1">
           <span className="text-sm text-muted-foreground">Total del gasto</span>

@@ -14,7 +14,11 @@ import {
   type UnidadMedida,
 } from "@/lib/precios-referencia";
 import { formatearMonto } from "@/lib/formato";
-import { montoDeLinea, type LineaGasto } from "@/lib/lineas-gasto";
+import {
+  esLineaDeServicio,
+  montoDeLinea,
+  type LineaGasto,
+} from "@/lib/lineas-gasto";
 import type { ItemCatalogoConCategoria } from "@/components/nuevo-item-dialog";
 import type { categorias } from "@/db/schema";
 
@@ -61,9 +65,13 @@ export function LineaGastoFila({
   sobreprecioDeLinea: (linea: LineaGasto) => boolean;
   referenciaDeLinea: (linea: LineaGasto) => number | undefined;
 }) {
+  const esServicio = esLineaDeServicio(linea, categoriasList);
   const esProvisoria = linea.item.id < 0;
   const esGenericaEditable = linea.genericaEditable === true;
-  const editableComoTicket = esProvisoria || esGenericaEditable;
+  const editableComoServicio = esServicio && linea.item.id <= 0;
+  const editableComoTicket =
+    !esServicio && (esProvisoria || esGenericaEditable);
+  const nombreEditable = editableComoTicket || editableComoServicio;
   const sinPeso = linea.esPesoDesconocido;
   const puedeNoSaberElPeso =
     linea.item.nombre !== ITEM_PAGO_TARJETA &&
@@ -74,13 +82,15 @@ export function LineaGastoFila({
     >
       <div>
         <div className="flex items-start gap-2">
-          {editableComoTicket ? (
+          {nombreEditable ? (
             <Input
               value={linea.item.nombre}
               onChange={(e) =>
                 renombrarLinea(linea.key, e.target.value)
               }
-              placeholder="Nombre del ítem"
+              placeholder={
+                editableComoServicio ? "Ej: Consulta odontológica" : "Nombre del ítem"
+              }
               className="h-7 text-[13px] font-medium"
             />
           ) : (
@@ -88,7 +98,7 @@ export function LineaGastoFila({
               {linea.item.nombre}
             </div>
           )}
-          {!editableComoTicket && linea.item.id > 0 && (
+          {!nombreEditable && linea.item.id > 0 && (
             <button
               type="button"
               title="Editar ítem del catálogo (nombre, marca, categoría por defecto)"
@@ -109,7 +119,7 @@ export function LineaGastoFila({
             </button>
           )}
         </div>
-        {editableComoTicket ? (
+        {editableComoTicket && (
           <>
             <div className="mt-0.5 text-[11.5px] text-primary">
               {esProvisoria
@@ -125,7 +135,8 @@ export function LineaGastoFila({
               onCrearNuevo={() => onCrearItemParaLinea(linea)}
             />
           </>
-        ) : (
+        )}
+        {!nombreEditable && (
           <div className="mt-0.5 text-[11.5px] text-muted-foreground">
             {[linea.item.marca, linea.item.tamano]
               .filter(Boolean)
@@ -147,7 +158,8 @@ export function LineaGastoFila({
             </button>
           </label>
         ) : (
-          !editableComoTicket && (
+          !editableComoTicket &&
+          !esServicio && (
             <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
               Se vende por
               <Select
@@ -172,7 +184,7 @@ export function LineaGastoFila({
         )}
       </div>
       <div>
-        {editableComoTicket ? (
+        {nombreEditable ? (
           <Select
             value={linea.categoriaId}
             onChange={(e) => {
@@ -204,37 +216,45 @@ export function LineaGastoFila({
         )}
       </div>
       <div className="flex flex-col gap-0.5">
-      <label
-        htmlFor={`cantidad-${linea.key}`}
-        className="text-[11px] font-medium text-muted-foreground md:hidden"
-      >
-        {sinPeso ? "Peso" : ETIQUETA_CANTIDAD[linea.unidad]}
-      </label>
-      <Input
-        id={`cantidad-${linea.key}`}
-        type="number"
-        onWheel={(e) => e.currentTarget.blur()}
-        min={linea.unidad === "un" ? 1 : 0}
-        step={linea.unidad === "un" ? 1 : 0.001}
-        value={sinPeso ? "" : linea.cantidad}
-        disabled={linea.bloqueada || sinPeso}
-        onChange={(e) =>
-          actualizarLinea(linea.key, {
-            cantidad: Number(e.target.value) || 0,
-          })
-        }
-        placeholder={
-          sinPeso ? "sin dato" : linea.unidad === "un" ? "1" : "0,165"
-        }
-        className="h-8 w-full text-[13px]"
-      />
+      {!esServicio && (
+        <>
+          <label
+            htmlFor={`cantidad-${linea.key}`}
+            className="text-[11px] font-medium text-muted-foreground md:hidden"
+          >
+            {sinPeso ? "Peso" : ETIQUETA_CANTIDAD[linea.unidad]}
+          </label>
+          <Input
+            id={`cantidad-${linea.key}`}
+            type="number"
+            onWheel={(e) => e.currentTarget.blur()}
+            min={linea.unidad === "un" ? 1 : 0}
+            step={linea.unidad === "un" ? 1 : 0.001}
+            value={sinPeso ? "" : linea.cantidad}
+            disabled={linea.bloqueada || sinPeso}
+            onChange={(e) =>
+              actualizarLinea(linea.key, {
+                cantidad: Number(e.target.value) || 0,
+              })
+            }
+            placeholder={
+              sinPeso ? "sin dato" : linea.unidad === "un" ? "1" : "0,165"
+            }
+            className="h-8 w-full text-[13px]"
+          />
+        </>
+      )}
       </div>
       <div className="flex flex-col gap-0.5">
       <label
         htmlFor={`precio-${linea.key}`}
         className="text-[11px] font-medium text-muted-foreground md:hidden"
       >
-        {sinPeso ? "Total pagado" : ETIQUETA_PRECIO[linea.unidad]}
+        {esServicio
+          ? "Importe"
+          : sinPeso
+            ? "Total pagado"
+            : ETIQUETA_PRECIO[linea.unidad]}
       </label>
       <Input
         id={`precio-${linea.key}`}

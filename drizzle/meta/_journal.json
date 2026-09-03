@@ -125,7 +125,28 @@
       "idx": 17,
       "version": "6",
       "when": 1788405794197,
-      "tag": "0017_lame_venus",
+      "tag": "0017_flag_peso_desconocido_en_gasto_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788458750415,
+      "tag": "0018_flag_es_servicio_en_categorias",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788459000000,
+      "tag": "0019_categorias_servicio",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788460555992,
+      "tag": "0020_gastos_fijos",
       "breakpoints": true
     }
   ]

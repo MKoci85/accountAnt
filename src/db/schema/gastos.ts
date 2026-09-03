@@ -7,6 +7,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { emisores, categorias, itemsCatalogo } from "./catalogos";
+import { gastosFijos } from "./gastos-fijos";
 
 export const gastos = sqliteTable(
   "gastos",
@@ -22,6 +23,10 @@ export const gastos = sqliteTable(
     numero: text("numero"),
 
     montoTotal: real("monto_total"),
+
+    gastoFijoId: integer("gasto_fijo_id").references(() => gastosFijos.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     uniqueIndex("gastos_comprobante_unico")

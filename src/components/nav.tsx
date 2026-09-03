@@ -8,12 +8,14 @@ import {
   BarChart3,
   Settings2,
   CreditCard,
+  Repeat,
   SlidersHorizontal,
 } from "lucide-react";
 
 const links = [
   { href: "/", label: "Inicio", icon: LayoutDashboard },
   { href: "/gastos", label: "Gastos", icon: Receipt },
+  { href: "/gastos-fijos", label: "Fijos", icon: Repeat },
   { href: "/estado-cuenta", label: "Tarjeta", icon: CreditCard },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
   { href: "/catalogos", label: "Catálogos", icon: Settings2 },
@@ -33,10 +35,11 @@ export function Nav() {
   return (
     <>
       <aside className="hidden md:flex md:w-60 md:shrink-0 md:flex-col md:gap-8 bg-sidebar text-sidebar-foreground p-6">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Receipt className="h-4 w-4 text-sidebar-primary-foreground" />
-          </div>
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="marca-hormiga h-8 w-8 shrink-0 bg-sidebar-primary"
+          />
           <span className="text-[17px] font-semibold tracking-tight">
             AccountAnt
           </span>
