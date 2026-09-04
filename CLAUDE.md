@@ -15,6 +15,8 @@ npm run dev            # start dev server (Turbopack)
 npm run dev:https       # dev server over HTTPS (needed for camera/QR scan from a phone on the LAN — see README)
 npm run build           # production build
 npm run lint             # ESLint (flat config, eslint-config-next)
+npm test                 # Vitest, una sola pasada
+npm run test:watch       # Vitest en watch
 npx tsc --noEmit         # typecheck (no dedicated typecheck script)
 
 npm run db:generate      # generate a Drizzle migration from schema changes
@@ -22,7 +24,11 @@ npm run db:migrate       # apply migrations to ./data/control-gastos.db
 npm run db:studio        # Drizzle Studio GUI
 ```
 
-There is no test runner configured. Verification for a change is: `npm run lint`, `npx tsc --noEmit`, and manually exercising the flow via `npm run dev`.
+Verification for a change is: `npm test`, `npm run lint`, `npx tsc --noEmit`, and manually exercising the flow via `npm run dev`.
+
+**Tests are Vitest, node environment, and cover pure functions in `src/lib/` only** (`src/lib/*.test.ts`, config in `vitest.config.mts`, `@/` aliased to `src/`). There is deliberately no component, server-action or DB test: those need a running SQLite file or a DOM, and the maintenance cost was judged not worth it for a single-user app. What *is* covered is the arithmetic and the parsers that fail silently — `montoDeLinea`/`normalizarLineasDeServicio`/`lineasDesdeTicket`, `parsearTamano`/`superaReferencia`, `parsearMonto` (both of them — `lib/formato.ts` reads what the user types, `lib/estado-cuenta.ts` reads the PDF's own format), `parsearQR`/`parsearNombreItem`, `podarHistorial`/`separarReporteAdjunto`/`limpiarRespuestaChat`, `clasificarLinea`, `agruparEnFilas`/`redactarDatosPersonales`. When you change one of those, the test is the spec — update it deliberately, don't delete the case.
+
+`cfe.test.ts` has `vi.mock("@/db", ...)` for hygiene, not to avoid a crash: `lib/cfe.ts` imports `lib/config-server.ts`, which imports `@/db`, which opens `./data/control-gastos.db` **at import time**. It does not throw on a fresh clone — `data/.gitkeep` is committed, so the directory exists and SQLite just *creates* an empty file — but a unit test of a pure parser has no business opening a DB handle or leaving a stray `.db` + `-shm` + `-wal` behind. Nothing about the CFE parsing itself is mocked.
 
 ## Architecture
 

@@ -97,7 +97,7 @@ Como cada comercio puede estar en cualquiera de estos procesadores (o en ninguno
 - **jsQR** para decodificar códigos QR client-side, desde cámara (`getUserMedia`) o desde una foto subida.
 - **unpdf** para extraer texto posicional de los PDFs de estado de cuenta (declarado en `serverExternalPackages` en `next.config.ts`, para que su bundling se resuelva en runtime y no en el build de Next).
 - Integración opcional con **Anthropic, Google Gemini, OpenAI, Groq, OpenRouter y OpenCode Zen** para interpretar layouts de estado de cuenta no reconocidos por la heurística, fotos de tickets sin QR, y el asistente de reportes. Groq, OpenRouter y OpenCode Zen hablan el dialecto de OpenAI, así que comparten una sola rama de código parametrizada por datos (URL, headers, nombre del campo de tokens): sumar otro proveedor compatible es agregar una fila a una tabla, no escribir código.
-- Sin test runner: la verificación de cada cambio es `npm run lint` + `npx tsc --noEmit` + probar el flujo real con `npm run dev` (y `npm run build`, porque algunos problemas —como el bundling de paquetes nativos o el renderizado estático de páginas dinámicas— solo aparecen ahí, no en dev).
+- **Vitest** para los tests unitarios (ver más abajo). La verificación completa de un cambio es `npm test` + `npm run lint` + `npx tsc --noEmit` + probar el flujo real con `npm run dev` (y `npm run build`, porque algunos problemas —como el bundling de paquetes nativos o el renderizado estático de páginas dinámicas— solo aparecen ahí, no en dev).
 
 ## Modelo de datos, en breve
 
@@ -141,10 +141,35 @@ npm start                 # sirve el build de producción
 npm run serve             # build + start, en un solo comando
 npm run lint              # ESLint
 npx tsc --noEmit          # chequeo de tipos
+npm test                  # tests unitarios (Vitest)
+npm run test:watch        # tests en modo watch
 
 npm run db:generate       # genera una migración de Drizzle a partir de cambios en el schema
 npm run db:studio         # Drizzle Studio (GUI para explorar la base)
 ```
+
+## Tests
+
+```bash
+npm test
+```
+
+Los tests son unitarios y puros: cubren las funciones de `src/lib/` que no tocan la base, la red ni el DOM. Viven al lado del módulo que prueban (`src/lib/lineas-gasto.test.ts`, etc.).
+
+El criterio para elegirlos fue **qué puede romperse en silencio**: un error de aritmética o de parseo no tira una excepción, guarda un número equivocado y el usuario se entera meses después mirando un reporte que no cierra. Eso es lo que está cubierto:
+
+| Módulo | Qué se verifica |
+|---|---|
+| `lineas-gasto` | Que el precio vacío no sea un cero, que una línea de servicio de 3 × $500 se colapse en 1 × $1.500 **sin perder plata**, y que un renglón de ticket se convierta bien a cantidad + unidad + precio unitario (por peso, por precio/kilo, por tamaño de envase) además de agrupar repetidos. |
+| `precios-referencia` | El parseo de tamaños libres ("500 gr" → 0.5 kg), la normalización de unidades, y que el margen del 3% se aplique solo a las líneas por peso y nunca a las de unidad. |
+| `formato` | `parsearMonto` / `formatearMonto` en formato es-UY, incluido que sean reversibles entre sí y que la coma se lea como decimal (que es lo que teclea el celular). |
+| `estado-cuenta` | La detección de la columna de dólares, el parseo de importes del PDF y el armado de movimientos: fecha, descripción, importe de más a la derecha, y el descarte de las líneas que no son consumo. |
+| `cfe` | El parseo del QR de un comprobante uruguayo (y su rechazo cuando no lo es), y la separación del peso/volumen o el conteo que el POS pega al nombre del producto. |
+| `chat-ia` | La poda del historial contra el límite de contexto (que nunca deje un mensaje afuera sin avisar, y que recorte el último en vez de descartarlo), la separación del reporte adjunto de la pregunta, y la limpieza de la respuesta del modelo. |
+| `clasificacion-comercios` | Que "PARADISA" no se clasifique como combustible por contener "DISA", que "ANCAP3140" sí, y el mapeo de suscripciones y rubros. |
+| `pdf` | El agrupado de fragmentos en renglones por coordenadas, y la redacción de datos personales antes de mandar un texto a un proveedor de IA. |
+
+**Lo que deliberadamente no hay** son tests de componentes, de server actions ni de la base. Necesitarían un DOM o un archivo SQLite levantado, y para una app de un solo usuario el costo de mantenerlos no se justifica; la verificación de esas capas sigue siendo `npm run dev` y usar el flujo.
 
 ## Uso desde el celular (Tailscale)
 
