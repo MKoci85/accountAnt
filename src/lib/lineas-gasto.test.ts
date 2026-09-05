@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   esLineaDeServicio,
-  lineaDeServicioNueva,
+  lineaLibreNueva,
   lineasDesdeTicket,
   montoDeLinea,
   normalizarLineasDeServicio,
@@ -41,6 +41,7 @@ function linea(parcial: Partial<LineaGasto> = {}): LineaGasto {
     sobreprecioManual: false,
     esPrecioBase: false,
     esPesoDesconocido: false,
+    sinCatalogo: false,
     bloqueada: false,
     ...parcial,
   };
@@ -81,15 +82,22 @@ describe("esLineaDeServicio", () => {
   });
 });
 
-describe("lineaDeServicioNueva", () => {
-  it("usa el id -1 para no chocar con el guard de ítems sin catalogar", () => {
-    const nueva = lineaDeServicioNueva(SERVICIOS);
-    expect(nueva.item.id).toBe(-1);
+describe("lineaLibreNueva", () => {
+  it("nace marcada como libre, que es lo que la exime de vincularse al catálogo", () => {
+    const nueva = lineaLibreNueva(SERVICIOS);
+    expect(nueva.sinCatalogo).toBe(true);
+    expect(nueva.item.id).toBeLessThanOrEqual(0);
     expect(nueva.item.nombre).toBe("");
     expect(nueva.categoriaId).toBe(SERVICIOS.id);
     expect(nueva.cantidad).toBe(1);
     expect(nueva.unidad).toBe("un");
     expect(nueva.precio).toBe("");
+  });
+
+  it("no exige una categoría de servicio: una compra puntual también es libre", () => {
+    const nueva = lineaLibreNueva(ALMACEN);
+    expect(nueva.sinCatalogo).toBe(true);
+    expect(esLineaDeServicio(nueva, [ALMACEN, SERVICIOS])).toBe(false);
   });
 });
 
@@ -229,6 +237,14 @@ describe("lineasDesdeTicket", () => {
         }),
       ])
     ).toHaveLength(2);
+  });
+
+  it("nunca marca una línea como libre, tenga el id provisorio que tenga", () => {
+    const lineas = lineasDesdeTicket([
+      delTicket({ nombreTicket: "Algo raro" }),
+      delTicket({ nombreTicket: "Otra cosa" }),
+    ]);
+    expect(lineas.map((l) => l.sinCatalogo)).toEqual([false, false]);
   });
 
   it("manda a Sin asignar el ítem sin catálogo ni categoría sugerida", () => {

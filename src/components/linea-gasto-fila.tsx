@@ -66,12 +66,15 @@ export function LineaGastoFila({
   referenciaDeLinea: (linea: LineaGasto) => number | undefined;
 }) {
   const esServicio = esLineaDeServicio(linea, categoriasList);
-  const esProvisoria = linea.item.id < 0;
   const esGenericaEditable = linea.genericaEditable === true;
-  const editableComoServicio = esServicio && linea.item.id <= 0;
-  const editableComoTicket =
-    !esServicio && (esProvisoria || esGenericaEditable);
-  const nombreEditable = editableComoTicket || editableComoServicio;
+  const necesitaCatalogo =
+    !linea.sinCatalogo && (linea.item.id <= 0 || esGenericaEditable);
+  const nombreEditable = linea.sinCatalogo || necesitaCatalogo;
+  const vieneDelTicket = linea.item.id <= 0;
+  const eligeUnidad =
+    !necesitaCatalogo &&
+    !esServicio &&
+    (!linea.sinCatalogo || linea.unidad !== "un");
   const sinPeso = linea.esPesoDesconocido;
   const puedeNoSaberElPeso =
     linea.item.nombre !== ITEM_PAGO_TARJETA &&
@@ -89,7 +92,11 @@ export function LineaGastoFila({
                 renombrarLinea(linea.key, e.target.value)
               }
               placeholder={
-                editableComoServicio ? "Ej: Consulta odontológica" : "Nombre del ítem"
+                esServicio
+                  ? "Ej: Consulta odontológica"
+                  : linea.sinCatalogo
+                    ? "Ej: Uniforme deportivo"
+                    : "Nombre del ítem"
               }
               className="h-7 text-[13px] font-medium"
             />
@@ -108,7 +115,7 @@ export function LineaGastoFila({
               <Pencil className="h-3 w-3" />
             </button>
           )}
-          {editableComoTicket && (
+          {necesitaCatalogo && (
             <button
               type="button"
               title="Crear ítem nuevo en el catálogo"
@@ -119,10 +126,10 @@ export function LineaGastoFila({
             </button>
           )}
         </div>
-        {editableComoTicket && (
+        {necesitaCatalogo && (
           <>
             <div className="mt-0.5 text-[11.5px] text-primary">
-              {esProvisoria
+              {vieneDelTicket
                 ? linea.item.tamano
                   ? `Del ticket, sin catalogar · ${linea.item.tamano}`
                   : "Del ticket, sin catalogar"
@@ -158,10 +165,9 @@ export function LineaGastoFila({
             </button>
           </label>
         ) : (
-          !editableComoTicket &&
-          !esServicio && (
-            <label className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              Se vende por
+          eligeUnidad && (
+            <label className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+              <span className="whitespace-nowrap">Se vende por</span>
               <Select
                 value={linea.unidad}
                 onChange={(e) => {

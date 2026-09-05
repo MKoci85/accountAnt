@@ -24,6 +24,7 @@ export type LineaGasto = {
   sobreprecioManual: boolean;
   esPrecioBase: boolean;
   esPesoDesconocido: boolean;
+  sinCatalogo: boolean;
   bloqueada: boolean;
   genericaEditable?: boolean;
 };
@@ -54,12 +55,15 @@ export function esLineaDeServicio(
 }
 
 /**
- * Crea la línea vacía del botón "Agregar servicio o concepto": sin ítem de
- * catálogo, con el nombre a escribir y el importe como únicos campos.
+ * Crea la línea vacía del botón "Agregar sin catálogo": el nombre se escribe a
+ * mano y no espera vincularse a ningún ítem, sea un servicio (UTE, una consulta
+ * médica) o una compra puntual que no vale la pena catalogar (un uniforme
+ * deportivo). Que además lleve cantidad y unidad o un importe único lo decide
+ * `esServicio` de la categoría, no esta función.
  */
-export function lineaDeServicioNueva(categoria: Categoria): LineaGasto {
+export function lineaLibreNueva(categoria: Categoria): LineaGasto {
   return {
-    key: `servicio-${contadorItemProvisorio--}`,
+    key: `libre-${contadorItemProvisorio--}`,
     item: {
       id: -1,
       nombre: "",
@@ -79,6 +83,7 @@ export function lineaDeServicioNueva(categoria: Categoria): LineaGasto {
     sobreprecioManual: false,
     esPrecioBase: false,
     esPesoDesconocido: false,
+    sinCatalogo: true,
     bloqueada: false,
   };
 }
@@ -214,6 +219,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
         sobreprecioManual: false,
         esPrecioBase: false,
         esPesoDesconocido: false,
+        sinCatalogo: false,
         bloqueada: linea.bloqueada,
       };
     }
@@ -239,6 +245,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
       sobreprecioManual: false,
       esPrecioBase: false,
       esPesoDesconocido: false,
+      sinCatalogo: false,
       bloqueada: false,
     };
   });
@@ -246,6 +253,12 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
   return agruparRepetidas(convertidas);
 }
 
+/**
+ * Reconstruye las líneas de un gasto ya guardado. Una línea que llegó a la base
+ * sin `itemCatalogoId` se marca como libre: es la única forma que tenía de
+ * haberse guardado, así que su nombre vuelve a ser texto editable en vez de
+ * pedir que se la vincule al catálogo.
+ */
 export function lineasDesdeGasto(
   gasto: GastoDetalle,
   abrirGenericas = false
@@ -271,6 +284,7 @@ export function lineasDesdeGasto(
     sobreprecioManual: false,
     esPrecioBase: item.esPrecioBase,
     esPesoDesconocido: item.esPesoDesconocido,
+    sinCatalogo: item.itemCatalogoId == null,
     bloqueada: false,
     genericaEditable:
       abrirGenericas && item.itemNombre === ITEM_PAGO_TARJETA,

@@ -50,7 +50,7 @@ import {
 } from "@/lib/precios-referencia";
 import { formatearMonto, hoyISO } from "@/lib/formato";
 import {
-  lineaDeServicioNueva,
+  lineaLibreNueva,
   lineasDesdeGasto,
   lineasDesdeTicket,
   montoDeLinea,
@@ -292,6 +292,7 @@ export function NuevoGastoForm({
         sobreprecioManual: false,
         esPrecioBase: false,
         esPesoDesconocido: false,
+        sinCatalogo: false,
         bloqueada: false,
       },
     ]);
@@ -305,11 +306,11 @@ export function NuevoGastoForm({
     setLineas(normalizarLineasDeServicio(nuevas, categoriasList).lineas);
   }
 
-  function agregarLineaDeServicio() {
+  function agregarLineaLibre() {
     const categoria =
       categoriasList.find((c) => c.esServicio) ?? categoriasList[0];
     if (!categoria) return;
-    setLineas((prev) => [...prev, lineaDeServicioNueva(categoria)]);
+    setLineas((prev) => [...prev, lineaLibreNueva(categoria)]);
   }
 
   function quitarLinea(key: string) {
@@ -535,7 +536,7 @@ export function NuevoGastoForm({
     }
 
     const sinCatalogar = lineas.filter(
-      (l) => l.item.id < 0 && l.item.id !== -1
+      (l) => l.item.id <= 0 && !l.sinCatalogo
     );
     if (sinCatalogar.length > 0) {
       return sinCatalogar.length === 1
@@ -780,10 +781,10 @@ export function NuevoGastoForm({
             />
             <button
               type="button"
-              onClick={agregarLineaDeServicio}
+              onClick={agregarLineaLibre}
               className="shrink-0 rounded-lg border border-dashed px-3 py-1.5 text-[12.5px] font-medium text-muted-foreground hover:border-solid hover:text-foreground"
             >
-              + Agregar servicio o concepto
+              + Agregar sin catálogo
             </button>
           </div>
         </Card>
