@@ -148,6 +148,13 @@
       "when": 1788460555992,
       "tag": "0020_gastos_fijos",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1788872461169,
+      "tag": "0021_agrega_meses_a_gastos_fijos",
+      "breakpoints": true
     }
   ]
 }
