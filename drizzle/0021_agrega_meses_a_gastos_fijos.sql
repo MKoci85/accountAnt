@@ -1,0 +1,1 @@
+ALTER TABLE `gastos_fijos` ADD `meses` text;

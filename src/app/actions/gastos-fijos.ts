@@ -18,10 +18,12 @@ export type GastoFijoConEstado = {
   emisorNombre: string | null;
   importe: number | null;
   activo: boolean;
+  meses: number[] | null;
   ultimoPagoId: number | null;
   ultimoPagoFecha: string | null;
   ultimoPagoImporte: number | null;
   pagadoEsteMes: boolean;
+  correspondeEsteMes: boolean;
   cantidadPagos: number;
 };
 
@@ -33,6 +35,10 @@ function revalidarGastosFijos() {
 
 function mesDe(fechaISO: string) {
   return fechaISO.slice(0, 7);
+}
+
+function numeroDeMes(fechaISO: string) {
+  return Number(fechaISO.slice(5, 7));
 }
 
 /**
@@ -51,6 +57,7 @@ export async function listarGastosFijos(): Promise<GastoFijoConEstado[]> {
       emisorNombre: emisores.nombre,
       importe: gastosFijos.importe,
       activo: gastosFijos.activo,
+      meses: gastosFijos.meses,
     })
     .from(gastosFijos)
     .innerJoin(categorias, eq(categorias.id, gastosFijos.categoriaId))
@@ -88,7 +95,9 @@ export async function listarGastosFijos(): Promise<GastoFijoConEstado[]> {
     }
   }
 
-  const mesActual = mesDe(hoyISO());
+  const hoy = hoyISO();
+  const mesActual = mesDe(hoy);
+  const numeroMesActual = numeroDeMes(hoy);
 
   return plantillas.map((plantilla) => {
     const ultimo = ultimos.get(plantilla.id);
@@ -98,6 +107,8 @@ export async function listarGastosFijos(): Promise<GastoFijoConEstado[]> {
       ultimoPagoFecha: ultimo?.fecha ?? null,
       ultimoPagoImporte: ultimo ? Number(ultimo.total.toFixed(2)) : null,
       pagadoEsteMes: ultimo ? mesDe(ultimo.fecha) === mesActual : false,
+      correspondeEsteMes:
+        plantilla.meses == null || plantilla.meses.includes(numeroMesActual),
       cantidadPagos: conteo.get(plantilla.id) ?? 0,
     };
   });
@@ -107,12 +118,19 @@ function validarDatos(datos: {
   nombre: string;
   categoriaId: number;
   importe?: number | null;
+  meses?: number[] | null;
 }) {
   const nombre = datos.nombre.trim();
   if (!nombre) throw new Error("El nombre del gasto fijo es obligatorio");
   if (!datos.categoriaId) throw new Error("Elegí un tipo para el gasto fijo");
   if (datos.importe != null && datos.importe <= 0) {
     throw new Error("El importe esperado tiene que ser mayor a cero");
+  }
+  if (
+    datos.meses != null &&
+    datos.meses.some((m) => !Number.isInteger(m) || m < 1 || m > 12)
+  ) {
+    throw new Error("Hay un mes inválido seleccionado");
   }
   return nombre;
 }
@@ -122,6 +140,7 @@ export async function crearGastoFijo(datos: {
   categoriaId: number;
   emisorId?: number | null;
   importe?: number | null;
+  meses?: number[] | null;
 }) {
   const nombre = validarDatos(datos);
 
@@ -132,6 +151,7 @@ export async function crearGastoFijo(datos: {
       categoriaId: datos.categoriaId,
       emisorId: datos.emisorId ?? null,
       importe: datos.importe ?? null,
+      meses: datos.meses ?? null,
     })
     .returning();
 
@@ -146,6 +166,7 @@ export async function editarGastoFijo(
     categoriaId: number;
     emisorId?: number | null;
     importe?: number | null;
+    meses?: number[] | null;
   }
 ) {
   const nombre = validarDatos(datos);
@@ -157,6 +178,7 @@ export async function editarGastoFijo(
       categoriaId: datos.categoriaId,
       emisorId: datos.emisorId ?? null,
       importe: datos.importe ?? null,
+      meses: datos.meses ?? null,
     })
     .where(eq(gastosFijos.id, id))
     .returning();

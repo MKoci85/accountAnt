@@ -10,4 +10,5 @@ export const gastosFijos = sqliteTable("gastos_fijos", {
   emisorId: integer("emisor_id").references(() => emisores.id),
   importe: real("importe"),
   activo: integer("activo", { mode: "boolean" }).notNull().default(true),
+  meses: text("meses", { mode: "json" }).$type<number[]>(),
 });

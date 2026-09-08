@@ -64,6 +64,8 @@ export function GastosFijosView({
   const activas = plantillas.filter((p) => p.activo);
   const archivadas = plantillas.filter((p) => !p.activo);
   const pagadas = activas.filter((p) => p.pagadoEsteMes);
+  const debenEsteMes = activas.filter((p) => p.correspondeEsteMes);
+  const pagadasDebidas = debenEsteMes.filter((p) => p.pagadoEsteMes);
   const totalDelMes = pagadas.reduce(
     (acc, p) => acc + (p.ultimoPagoImporte ?? 0),
     0
@@ -115,9 +117,13 @@ export function GastosFijosView({
                   ? formatearFechaCorta(plantilla.ultimoPagoFecha)
                   : "Pagado"}
               </Badge>
-            ) : (
+            ) : plantilla.correspondeEsteMes ? (
               <Badge variant="outline" className="shrink-0">
                 Pendiente
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="shrink-0 opacity-60">
+                No corresponde
               </Badge>
             ))}
         </div>
@@ -199,7 +205,7 @@ export function GastosFijosView({
         <p className="text-sm text-muted-foreground">
           {activas.length === 0
             ? "Todavía no hay gastos fijos cargados."
-            : `${pagadas.length} de ${activas.length} pagados este mes · ${formatearMonto(totalDelMes)}`}
+            : `${pagadasDebidas.length} de ${debenEsteMes.length} pagados este mes · ${formatearMonto(totalDelMes)}`}
         </p>
         <Button size="sm" className="gap-1.5" onClick={abrirNuevo}>
           <Plus className="h-3.5 w-3.5" />

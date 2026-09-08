@@ -18,6 +18,7 @@ import {
   type GastoFijoConEstado,
 } from "@/app/actions/gastos-fijos";
 import { parsearMonto } from "@/lib/formato";
+import { cn } from "@/lib/utils";
 import type { categorias, emisores } from "@/db/schema";
 
 type Categoria = typeof categorias.$inferSelect;
@@ -29,6 +30,21 @@ function ordenarPorTipo(lista: Categoria[]) {
     return a.nombre.localeCompare(b.nombre);
   });
 }
+
+const NOMBRES_MESES = [
+  "Ene",
+  "Feb",
+  "Mar",
+  "Abr",
+  "May",
+  "Jun",
+  "Jul",
+  "Ago",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dic",
+];
 
 export function GastoFijoDialog({
   open,
@@ -52,6 +68,12 @@ export function GastoFijoDialog({
   );
   const [importe, setImporte] = useState(
     plantillaExistente?.importe != null ? String(plantillaExistente.importe) : ""
+  );
+  const [todosLosMeses, setTodosLosMeses] = useState(
+    plantillaExistente?.meses == null
+  );
+  const [mesesElegidos, setMesesElegidos] = useState<number[]>(
+    plantillaExistente?.meses ?? []
   );
   const [emisorQuery, setEmisorQuery] = useState(
     plantillaExistente?.emisorNombre ?? ""
@@ -89,6 +111,8 @@ export function GastoFijoDialog({
       );
       setEmisorQuery(plantillaExistente?.emisorNombre ?? "");
       setEmisorId(plantillaExistente?.emisorId ?? null);
+      setTodosLosMeses(plantillaExistente?.meses == null);
+      setMesesElegidos(plantillaExistente?.meses ?? []);
       setResultados([]);
       setError(null);
     }
@@ -105,6 +129,14 @@ export function GastoFijoDialog({
     setEmisorQuery("");
   }
 
+  function alternarMes(mes: number) {
+    setMesesElegidos((actual) =>
+      actual.includes(mes)
+        ? actual.filter((m) => m !== mes)
+        : [...actual, mes].sort((a, b) => a - b)
+    );
+  }
+
   const importeParseado = importe.trim() ? parsearMonto(importe) : null;
   const importeInvalido =
     importe.trim().length > 0 &&
@@ -117,6 +149,7 @@ export function GastoFijoDialog({
         categoriaId,
         emisorId,
         importe: importeParseado,
+        meses: todosLosMeses ? null : mesesElegidos,
       };
       if (plantillaExistente) {
         await editarGastoFijo(plantillaExistente.id, datos);
@@ -177,6 +210,73 @@ export function GastoFijoDialog({
         <p className="text-[11.5px] text-muted-foreground">
           Se usa como valor por defecto al pagar. Si el monto cambia todos los
           meses, dejalo vacío: se guarda solo el del último pago.
+        </p>
+      </CampoFormulario>
+
+      <CampoFormulario label="Frecuencia" htmlFor="gasto-fijo-meses">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            aria-pressed={todosLosMeses}
+            onClick={() => setTodosLosMeses(true)}
+            className={cn(
+              "rounded-lg border px-3 py-1.5 text-[12.5px] transition-colors",
+              todosLosMeses
+                ? "border-primary/60 bg-primary/5"
+                : "border-border hover:bg-muted/50"
+            )}
+          >
+            Todos los meses
+          </button>
+          <button
+            type="button"
+            aria-pressed={!todosLosMeses}
+            onClick={() => setTodosLosMeses(false)}
+            className={cn(
+              "rounded-lg border px-3 py-1.5 text-[12.5px] transition-colors",
+              !todosLosMeses
+                ? "border-primary/60 bg-primary/5"
+                : "border-border hover:bg-muted/50"
+            )}
+          >
+            Meses específicos
+          </button>
+        </div>
+
+        {!todosLosMeses && (
+          <div
+            id="gasto-fijo-meses"
+            className="grid grid-cols-4 gap-1.5 sm:grid-cols-6"
+          >
+            {NOMBRES_MESES.map((nombreMes, indice) => {
+              const mes = indice + 1;
+              const elegido = mesesElegidos.includes(mes);
+              return (
+                <button
+                  key={mes}
+                  type="button"
+                  aria-pressed={elegido}
+                  onClick={() => alternarMes(mes)}
+                  className={cn(
+                    "rounded-lg border px-2 py-1.5 text-[12.5px] transition-colors",
+                    elegido
+                      ? "border-primary/60 bg-primary/5"
+                      : "border-border hover:bg-muted/50"
+                  )}
+                >
+                  {nombreMes}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="text-[11.5px] text-muted-foreground">
+          {todosLosMeses
+            ? "Figura pendiente todos los meses (alquiler, Netflix, UTE...)."
+            : mesesElegidos.length === 0
+              ? "Sin meses elegidos, nunca figura pendiente por sí solo — se paga cuando corresponda."
+              : "Solo figura pendiente en los meses marcados (patente, seguro anual...)."}
         </p>
       </CampoFormulario>
 

@@ -56,3 +56,6 @@ next-env.d.ts
 /skills-lock.json
 .claude/
 services
+
+# instalador Windows
+/installer/
