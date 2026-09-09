@@ -155,6 +155,20 @@
       "when": 1788872461169,
       "tag": "0021_agrega_meses_a_gastos_fijos",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1788957423303,
+      "tag": "0022_agrega_flag_oferta_en_gasto_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1788960056592,
+      "tag": "0023_alias_de_ticket_por_item",
+      "breakpoints": true
     }
   ]
 }

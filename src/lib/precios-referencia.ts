@@ -95,6 +95,22 @@ export function claveReferencia(itemCatalogoId: number, unidad: UnidadMedida) {
   return `${itemCatalogoId}|${unidad}`;
 }
 
+export const MARGEN_OFERTA_DEFAULT = 0.15;
+
+/**
+ * @returns true si el precio está tan por debajo de la referencia que lo más
+ * probable es que sea una oferta o promoción, no el precio habitual del ítem.
+ * La referencia es el mínimo conocido: pagar menos que eso ya es sospechoso,
+ * y el margen evita ofrecer la marca por una diferencia de centavos.
+ */
+export function pareceOferta(
+  precio: number,
+  referencia: number,
+  margen: number
+) {
+  return precio > 0 && precio < referencia * (1 - margen);
+}
+
 export function superaReferencia(
   precio: number,
   referencia: number,

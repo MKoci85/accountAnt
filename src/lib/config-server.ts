@@ -8,6 +8,7 @@ import {
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
 import {
+  MARGEN_OFERTA_DEFAULT,
   MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
   MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
 } from "@/lib/precios-referencia";
@@ -179,6 +180,7 @@ async function leerNumero(clave: string, porDefecto: number): Promise<number> {
 }
 
 export const CLAVE_MARGEN_SOBREPRECIO = "precios_margen_sobreprecio_peso";
+export const CLAVE_MARGEN_OFERTA = "precios_margen_oferta";
 export const CLAVE_VENTANA_MESES = "precios_ventana_meses_referencia";
 export const CLAVE_BCU_DIAS = "bcu_dias_hacia_atras";
 export const CLAVE_BCU_URL = "bcu_url_endpoint";
@@ -203,6 +205,14 @@ export async function leerMargenSobreprecioPeso(): Promise<number> {
 
 export async function escribirMargenSobreprecioPeso(valor: number) {
   await escribirConfig(CLAVE_MARGEN_SOBREPRECIO, String(valor));
+}
+
+export async function leerMargenOferta(): Promise<number> {
+  return leerNumero(CLAVE_MARGEN_OFERTA, MARGEN_OFERTA_DEFAULT);
+}
+
+export async function escribirMargenOferta(valor: number) {
+  await escribirConfig(CLAVE_MARGEN_OFERTA, String(valor));
 }
 
 export async function leerVentanaMesesReferencia(): Promise<number> {

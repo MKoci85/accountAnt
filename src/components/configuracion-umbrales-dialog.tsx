@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   guardarDiasHaciaAtrasBcu,
+  guardarMargenOferta,
   guardarMargenSobreprecioPeso,
   guardarVentanaMesesReferencia,
   type ConfigAvanzada,
@@ -33,6 +34,14 @@ export function ConfiguracionUmbralesDialog({
           porDefecto={inicial.margenSobreprecioPesoPorDefecto * 100}
           ayuda="Tolerancia sobre el precio de referencia en las líneas por kg o L. El precio por kilo que sale de un ticket nunca da exacto: sin margen casi toda compra de verdura quedaría marcada como cara. No se aplica a las líneas por unidad."
           onGuardar={(v) => guardarMargenSobreprecioPeso(v / 100)}
+        />
+        <CampoNumero
+          etiqueta="Margen para sugerir oferta"
+          sufijo="%"
+          valor={inicial.margenOferta * 100}
+          porDefecto={inicial.margenOfertaPorDefecto * 100}
+          ayuda="Cuánto tiene que estar por debajo del precio de referencia una línea para que el formulario ofrezca marcarla como oferta. Una oferta no se usa como referencia: si no se marca, el precio promocional pasa a ser el mínimo y todas las compras siguientes quedan como sobreprecio."
+          onGuardar={(v) => guardarMargenOferta(v / 100)}
         />
         <CampoNumero
           etiqueta="Ventana de precio de referencia"

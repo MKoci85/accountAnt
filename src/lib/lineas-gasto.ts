@@ -23,6 +23,7 @@ export type LineaGasto = {
   esSobreprecio: boolean;
   sobreprecioManual: boolean;
   esPrecioBase: boolean;
+  esOferta: boolean;
   esPesoDesconocido: boolean;
   sinCatalogo: boolean;
   bloqueada: boolean;
@@ -82,6 +83,7 @@ export function lineaLibreNueva(categoria: Categoria): LineaGasto {
     esSobreprecio: false,
     sobreprecioManual: false,
     esPrecioBase: false,
+    esOferta: false,
     esPesoDesconocido: false,
     sinCatalogo: true,
     bloqueada: false,
@@ -218,6 +220,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
         esSobreprecio: false,
         sobreprecioManual: false,
         esPrecioBase: false,
+        esOferta: false,
         esPesoDesconocido: false,
         sinCatalogo: false,
         bloqueada: linea.bloqueada,
@@ -244,6 +247,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
       esSobreprecio: false,
       sobreprecioManual: false,
       esPrecioBase: false,
+      esOferta: false,
       esPesoDesconocido: false,
       sinCatalogo: false,
       bloqueada: false,
@@ -283,6 +287,7 @@ export function lineasDesdeGasto(
     esSobreprecio: item.esSobreprecio,
     sobreprecioManual: false,
     esPrecioBase: item.esPrecioBase,
+    esOferta: item.esOferta,
     esPesoDesconocido: item.esPesoDesconocido,
     sinCatalogo: item.itemCatalogoId == null,
     bloqueada: false,

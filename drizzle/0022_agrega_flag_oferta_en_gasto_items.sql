@@ -1,0 +1,1 @@
+ALTER TABLE `gasto_items` ADD `es_oferta` integer DEFAULT false NOT NULL;

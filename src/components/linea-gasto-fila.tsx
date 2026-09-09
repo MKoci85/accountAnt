@@ -52,7 +52,10 @@ export function LineaGastoFila({
   abrirEdicionItemCatalogo,
   onCrearItemParaLinea,
   sobreprecioDeLinea,
+  ofertaSugeridaDeLinea,
   referenciaDeLinea,
+  abrirHistorial,
+  esEdicion,
 }: {
   linea: LineaGasto;
   categorias: Categoria[];
@@ -63,7 +66,10 @@ export function LineaGastoFila({
   abrirEdicionItemCatalogo: (linea: LineaGasto) => void;
   onCrearItemParaLinea: (linea: LineaGasto) => void;
   sobreprecioDeLinea: (linea: LineaGasto) => boolean;
+  ofertaSugeridaDeLinea: (linea: LineaGasto) => boolean;
   referenciaDeLinea: (linea: LineaGasto) => number | undefined;
+  abrirHistorial: (linea: LineaGasto) => void;
+  esEdicion: boolean;
 }) {
   const esServicio = esLineaDeServicio(linea, categoriasList);
   const esGenericaEditable = linea.genericaEditable === true;
@@ -331,7 +337,6 @@ export function LineaGastoFila({
           linea.item.nombre !== ITEM_PAGO_TARJETA &&
           linea.item.id > 0 && (() => {
             const caro = sobreprecioDeLinea(linea);
-            const referencia = referenciaDeLinea(linea);
             return (
               <>
                 <button
@@ -348,12 +353,54 @@ export function LineaGastoFila({
                 >
                   <BadgeLinea tipo="sobreprecio" activo={caro} />
                 </button>
-                {caro && referencia !== undefined && (
-                  <span className="text-[10.5px] text-muted-foreground">
-                    ref. {formatearMonto(Number(referencia.toFixed(2)))}{" "}
-                    {etiquetaUnidad(linea.unidad)}
-                  </span>
+              </>
+            );
+          })()}
+        {!sinPeso &&
+          linea.item.nombre !== ITEM_PAGO_TARJETA &&
+          linea.item.id > 0 &&
+          (() => {
+            const referencia = referenciaDeLinea(linea);
+            const sugerida = ofertaSugeridaDeLinea(linea);
+            const ofreceOferta =
+              linea.esOferta ||
+              sugerida ||
+              (esEdicion && !sobreprecioDeLinea(linea));
+            return (
+              <>
+                {ofreceOferta && (
+                <button
+                  type="button"
+                  aria-pressed={linea.esOferta}
+                  disabled={linea.bloqueada}
+                  title="Una oferta o promoción no queda como precio de referencia: sin esto, las compras siguientes a precio normal se marcarían como sobreprecio"
+                  onClick={() =>
+                    actualizarLinea(linea.key, {
+                      esOferta: !linea.esOferta,
+                      esSobreprecio: false,
+                      sobreprecioManual: true,
+                      esPrecioBase: false,
+                    })
+                  }
+                >
+                  <BadgeLinea
+                    tipo="oferta"
+                    activo={linea.esOferta}
+                    etiquetaInactiva={
+                      sugerida ? "¿Está en oferta?" : "Marcar oferta"
+                    }
+                  />
+                </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => abrirHistorial(linea)}
+                  className="text-left text-[10.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+                >
+                  {referencia === undefined
+                    ? "Ver historial de precios"
+                    : `ref. ${formatearMonto(Number(referencia.toFixed(2)))} ${etiquetaUnidad(linea.unidad)}`}
+                </button>
               </>
             );
           })()}

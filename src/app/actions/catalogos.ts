@@ -6,6 +6,7 @@ import {
   emisores,
   proveedoresCfe,
   itemsCatalogo,
+  itemsAliasTicket,
   gastos,
   gastoItems,
   gastosFijos,
@@ -210,6 +211,18 @@ export async function buscarItemPorNombreExacto(nombre: string) {
     .limit(1);
   if (porNombre) return porNombre;
 
+  const [porAlias] = await db
+    .select(seleccion)
+    .from(itemsCatalogo)
+    .innerJoin(categorias, eq(itemsCatalogo.categoriaId, categorias.id))
+    .innerJoin(
+      itemsAliasTicket,
+      eq(itemsAliasTicket.itemCatalogoId, itemsCatalogo.id)
+    )
+    .where(sql`lower(${itemsAliasTicket.texto}) = lower(${nombre})`)
+    .limit(1);
+  if (porAlias) return porAlias;
+
   const [porDescripcion] = await db
     .select(seleccion)
     .from(itemsCatalogo)
@@ -222,6 +235,27 @@ export async function buscarItemPorNombreExacto(nombre: string) {
     )
     .limit(1);
   return porDescripcion ?? null;
+}
+
+/**
+ * Guarda el nombre crudo con el que un ticket nombra a un ítem del catálogo.
+ * El nombre visible del ítem es editable ("COCA COLA 1,5 LT RET" pasa a ser
+ * "Coca Cola 1.5L") y esa edición rompía el reconocimiento del próximo QR del
+ * mismo comercio, que sigue mandando el texto original. Es una tabla y no una
+ * columna porque cada comercio abrevia distinto: el mismo producto acumula un
+ * alias por ticket que lo nombra de otra forma.
+ * @returns Nada; un alias ya registrado no es un error.
+ */
+export async function registrarAliasTicket(
+  itemCatalogoId: number,
+  texto: string
+) {
+  const limpio = texto.trim();
+  if (!limpio) return;
+  await db
+    .insert(itemsAliasTicket)
+    .values({ itemCatalogoId, texto: limpio })
+    .onConflictDoNothing();
 }
 
 export async function crearItemCatalogo(datos: {
@@ -336,7 +370,8 @@ export async function buscarItemsCatalogo(query: string) {
       or(
         like(itemsCatalogo.nombre, patron),
         like(itemsCatalogo.marca, patron),
-        like(itemsCatalogo.descripcion, patron)
+        like(itemsCatalogo.descripcion, patron),
+        sql`exists (select 1 from ${itemsAliasTicket} where ${itemsAliasTicket.itemCatalogoId} = ${itemsCatalogo.id} and ${itemsAliasTicket.texto} like ${patron})`
       )
     )
     .orderBy(asc(itemsCatalogo.nombre))

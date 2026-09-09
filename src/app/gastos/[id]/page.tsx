@@ -162,6 +162,7 @@ export default async function DetalleGastoPage({
                     <BadgeLinea tipo="hormiga" activo={item.esHormiga} />
                     {item.esSobreprecio && <BadgeLinea tipo="sobreprecio" />}
                     {item.esPrecioBase && <BadgeLinea tipo="precioBase" />}
+                    {item.esOferta && <BadgeLinea tipo="oferta" />}
                     {item.esPesoDesconocido && (
                       <BadgeLinea tipo="pesoDesconocido" />
                     )}

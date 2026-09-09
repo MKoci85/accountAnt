@@ -20,6 +20,7 @@ import {
   obtenerEmisor,
   listarProveedoresCfe,
   obtenerOCrearEmisorGenerico,
+  registrarAliasTicket,
 } from "@/app/actions/catalogos";
 import {
   crearGasto,
@@ -39,6 +40,7 @@ import { EscanerComprobante, type LineaDesdeTicket } from "@/components/escaner-
 import { LectorTicketIA } from "@/components/lector-ticket-ia";
 import type { ResultadoTicketIA } from "@/app/actions/cfe";
 import { EmisorDialog } from "@/components/emisor-dialog";
+import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
 import { LineaGastoFila } from "@/components/linea-gasto-fila";
 import { ComboboxBusqueda } from "@/components/combobox-busqueda";
 import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
@@ -47,6 +49,8 @@ import {
   claveReferencia,
   formatearCantidadConUnidad,
   MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
+  MARGEN_OFERTA_DEFAULT,
+  pareceOferta,
 } from "@/lib/precios-referencia";
 import { formatearMonto, hoyISO } from "@/lib/formato";
 import {
@@ -93,6 +97,7 @@ function huellaFormulario(
       l.esHormiga,
       l.esSobreprecio,
       l.esPrecioBase,
+      l.esOferta,
       l.esPesoDesconocido,
     ]),
   ]);
@@ -177,6 +182,15 @@ export function NuevoGastoForm({
   const [margenSobreprecio, setMargenSobreprecio] = useState(
     MARGEN_SOBREPRECIO_POR_PESO_DEFAULT
   );
+  const [margenOferta, setMargenOferta] = useState(MARGEN_OFERTA_DEFAULT);
+  const [historialItem, setHistorialItem] = useState<{
+    id: number;
+    nombre: string;
+  } | null>(null);
+
+  function abrirHistorial(linea: LineaGasto) {
+    setHistorialItem({ id: linea.item.id, nombre: linea.item.nombre });
+  }
 
   const [guardando, startGuardado] = useTransition();
   const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
@@ -291,6 +305,7 @@ export function NuevoGastoForm({
         esSobreprecio: false,
         sobreprecioManual: false,
         esPrecioBase: false,
+        esOferta: false,
         esPesoDesconocido: false,
         sinCatalogo: false,
         bloqueada: false,
@@ -369,6 +384,17 @@ export function NuevoGastoForm({
   }
 
   function resolverLineaProvisoria(key: string, item: ItemCatalogoConCategoria) {
+    const linea = lineas.find((l) => l.key === key);
+    const textoTicket = linea?.item.nombre.trim() ?? "";
+    if (
+      linea &&
+      linea.item.id <= 0 &&
+      !linea.genericaEditable &&
+      textoTicket &&
+      textoTicket.toLowerCase() !== item.nombre.trim().toLowerCase()
+    ) {
+      registrarAliasTicket(item.id, textoTicket).catch(() => {});
+    }
     setLineas((prev) =>
       prev.map((l) =>
           l.key === key
@@ -472,6 +498,7 @@ export function NuevoGastoForm({
         )
       );
       setMargenSobreprecio(r.margen);
+      setMargenOferta(r.margenOferta);
     });
     return () => {
       cancelado = true;
@@ -485,8 +512,22 @@ export function NuevoGastoForm({
     return referencias.get(claveReferencia(linea.item.id, linea.unidad));
   }
 
+  /**
+   * @returns true si el precio de la línea está tan por debajo de la referencia
+   * que conviene ofrecerle al usuario marcarla como oferta. Es una sugerencia:
+   * la marca sólo la pone él, porque la otra explicación posible es que el
+   * precio del producto haya bajado de verdad y entonces sí debe ser referencia.
+   */
+  function ofertaSugeridaDeLinea(linea: LineaGasto) {
+    if (linea.esPesoDesconocido) return false;
+    const referencia = referenciaDeLinea(linea);
+    if (referencia === undefined) return false;
+    return pareceOferta(montoDeLinea(linea.precio), referencia, margenOferta);
+  }
+
   function sobreprecioDeLinea(linea: LineaGasto) {
     if (linea.esPesoDesconocido) return false;
+    if (linea.esOferta) return false;
     if (linea.esPrecioBase) return false;
     if (linea.sobreprecioManual) return linea.esSobreprecio;
     if (linea.esSobreprecio) return true;
@@ -572,6 +613,7 @@ export function NuevoGastoForm({
           esSobreprecio: sobreprecioDeLinea(l),
           sobreprecioResuelto: true,
           esPrecioBase: l.esPrecioBase,
+          esOferta: l.esOferta,
           esPesoDesconocido: l.esPesoDesconocido,
         }));
         if (gastoInicial) {
@@ -743,7 +785,10 @@ export function NuevoGastoForm({
                     abrirEdicionItemCatalogo={abrirEdicionItemCatalogo}
                     onCrearItemParaLinea={crearItemParaLinea}
                     sobreprecioDeLinea={sobreprecioDeLinea}
+                    ofertaSugeridaDeLinea={ofertaSugeridaDeLinea}
                     referenciaDeLinea={referenciaDeLinea}
+                    abrirHistorial={abrirHistorial}
+                    esEdicion={gastoInicial !== undefined}
                   />
                 ))}
               </div>
@@ -949,6 +994,16 @@ export function NuevoGastoForm({
           itemCatalogoEditado(item);
           setItemCatalogoAEditar(null);
         }}
+      />
+
+      <HistorialPreciosDialog
+        itemCatalogoId={historialItem?.id ?? null}
+        nombreItem={historialItem?.nombre ?? ""}
+        open={historialItem !== null}
+        onOpenChange={(open) => {
+          if (!open) setHistorialItem(null);
+        }}
+        permitirMarcar={false}
       />
     </div>
   );

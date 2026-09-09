@@ -1,4 +1,9 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { FORMATOS_PROVEEDOR_CFE } from "../../lib/procesadores";
 
 export const categorias = sqliteTable("categorias", {
@@ -43,3 +48,17 @@ export const itemsCatalogo = sqliteTable("items_catalogo", {
     .references(() => categorias.id),
   descripcion: text("descripcion"),
 });
+
+export const itemsAliasTicket = sqliteTable(
+  "items_alias_ticket",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    itemCatalogoId: integer("item_catalogo_id")
+      .notNull()
+      .references(() => itemsCatalogo.id, { onDelete: "cascade" }),
+    texto: text("texto").notNull(),
+  },
+  (table) => [
+    uniqueIndex("items_alias_ticket_unico").on(table.itemCatalogoId, table.texto),
+  ]
+);

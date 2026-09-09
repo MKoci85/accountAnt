@@ -103,6 +103,7 @@ async function obtenerReferenciasPrecio() {
       precio: gastoItems.precio,
       esPrecioBase: gastoItems.esPrecioBase,
       esPesoDesconocido: gastoItems.esPesoDesconocido,
+      esOferta: gastoItems.esOferta,
       fecha: gastos.fecha,
       emisorNombre: emisores.nombre,
       unidad: gastoItems.unidad,
@@ -119,6 +120,7 @@ async function obtenerReferenciasPrecio() {
   >();
   for (const fila of filas) {
     if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
+    if (fila.esOferta) continue;
     const unidad = normalizarUnidad(fila.unidad);
     const clave = claveReferencia(fila.itemCatalogoId, unidad);
 
@@ -492,6 +494,7 @@ export async function exportarReporteJSON(filtros: FiltrosReporte) {
       glosario: {
         gastoHormiga:
           "Compra pequeña e impulsiva, marcada manualmente por el usuario como evitable (no necesaria). Es el foco principal de ahorro.",
+        oferta: "Línea que el usuario marcó como comprada en oferta o promoción. Su precio no se usa como precio de referencia de ese producto: es un precio circunstancial, y tomarlo como referencia haría que toda compra posterior a precio normal apareciera como sobreprecio. El gasto sí cuenta en los totales.",
         sobreprecio: `Línea de gasto donde se pagó un precio mayor al precio de referencia de ese mismo producto (el mínimo pagado en cualquier comercio dentro de los últimos ${mesesVentana} meses). Se marca automáticamente al cargar el gasto, o a mano por el usuario. Si el usuario confirma que fue una suba general (no una mala compra), esa línea deja de contar como sobreprecio y pasa a ser la nueva referencia.`,
         comparacionPorUnidadDeMedida:
           "Cada línea de gasto tiene una unidad: 'un' (piezas), 'kg' o 'L'. Cuando es kg o L, el campo 'precio' NO es el monto pagado sino el precio POR KILO (o por litro), y 'cantidad' es el peso de esa compra — el monto pagado es precio × cantidad. Esto es lo que hace comparables los productos de peso variable (frutas y verduras, quesos y fiambres, carne, panificados al peso), donde cada compra pesa distinto: 0,150 kg de cebolla a $14,85 y 0,400 kg a $40 son el mismo precio por kilo ($99 vs $100), y comparar los montos pagados marcaría la segunda compra como cara sólo porque pesa más. Los precios de referencia se agrupan por producto Y unidad, nunca se mezcla un precio por kilo con uno por pieza. En 'itemsConSobreprecio', 'precioMinimoConocido' viene en la unidad que indica 'unidadReferencia'.",

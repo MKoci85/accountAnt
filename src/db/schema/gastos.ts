@@ -58,4 +58,5 @@ export const gastoItems = sqliteTable("gasto_items", {
   esPesoDesconocido: integer("es_peso_desconocido", { mode: "boolean" })
     .notNull()
     .default(false),
+  esOferta: integer("es_oferta", { mode: "boolean" }).notNull().default(false),
 });

@@ -40,6 +40,7 @@ function linea(parcial: Partial<LineaGasto> = {}): LineaGasto {
     esSobreprecio: false,
     sobreprecioManual: false,
     esPrecioBase: false,
+    esOferta: false,
     esPesoDesconocido: false,
     sinCatalogo: false,
     bloqueada: false,

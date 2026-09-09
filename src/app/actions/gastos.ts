@@ -21,6 +21,7 @@ import {
   type UnidadMedida,
 } from "@/lib/precios-referencia";
 import {
+  leerMargenOferta,
   leerMargenSobreprecioPeso,
   leerVentanaMesesReferencia,
 } from "@/lib/config-server";
@@ -37,6 +38,7 @@ export type NuevoGastoItem = {
   sobreprecioResuelto?: boolean;
   esPrecioBase?: boolean;
   esPesoDesconocido?: boolean;
+  esOferta?: boolean;
 };
 
 async function obtenerPreciosMinimos(
@@ -64,6 +66,7 @@ async function obtenerPreciosMinimos(
       unidad: gastoItems.unidad,
       esPrecioBase: gastoItems.esPrecioBase,
       esPesoDesconocido: gastoItems.esPesoDesconocido,
+      esOferta: gastoItems.esOferta,
       fecha: gastos.fecha,
     })
     .from(gastoItems)
@@ -74,6 +77,7 @@ async function obtenerPreciosMinimos(
   const basesPorItem = new Map<string, { precio: number; fecha: string }>();
   for (const fila of filas) {
     if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
+    if (fila.esOferta) continue;
     const clave = claveReferencia(fila.itemCatalogoId, normalizarUnidad(fila.unidad));
     const minimoActual = minimos.get(clave);
     if (minimoActual === undefined || fila.precio < minimoActual) {
@@ -126,6 +130,7 @@ async function conSobreprecioDetectado(
 
   return items.map((item) => {
     if (item.esPesoDesconocido) return { ...item, esSobreprecio: false };
+    if (item.esOferta) return { ...item, esSobreprecio: false };
     if (item.esPrecioBase) return { ...item, esSobreprecio: false };
     if (item.itemCatalogoId != null && item.itemCatalogoId === idPagoTarjeta) {
       return { ...item, esSobreprecio: false };
@@ -205,6 +210,7 @@ export async function guardarGasto(
             esHormiga: item.esHormiga ?? false,
             esSobreprecio: item.esSobreprecio,
             esPrecioBase: item.esPrecioBase ?? false,
+          esOferta: item.esOferta ?? false,
             esPesoDesconocido: item.esPesoDesconocido ?? false,
           }))
         )
@@ -264,6 +270,7 @@ export async function editarGasto(
           esHormiga: item.esHormiga ?? false,
           esSobreprecio: item.esSobreprecio,
           esPrecioBase: item.esPrecioBase ?? false,
+          esOferta: item.esOferta ?? false,
           esPesoDesconocido: item.esPesoDesconocido ?? false,
         }))
       )
@@ -372,6 +379,7 @@ export type GastoDetalle = {
     esHormiga: boolean;
     esSobreprecio: boolean;
     esPrecioBase: boolean;
+    esOferta: boolean;
     esPesoDesconocido: boolean;
   }[];
 };
@@ -413,6 +421,7 @@ export async function obtenerGasto(id: number): Promise<GastoDetalle> {
       esSobreprecio: gastoItems.esSobreprecio,
       esPrecioBase: gastoItems.esPrecioBase,
       esPesoDesconocido: gastoItems.esPesoDesconocido,
+      esOferta: gastoItems.esOferta,
     })
     .from(gastoItems)
     .leftJoin(itemsCatalogo, eq(itemsCatalogo.id, gastoItems.itemCatalogoId))
@@ -556,6 +565,7 @@ export type ReferenciaPrecio = {
 export type ReferenciasConMargen = {
   referencias: ReferenciaPrecio[];
   margen: number;
+  margenOferta: number;
 };
 
 /**
@@ -588,5 +598,195 @@ export async function obtenerReferenciasDePrecio(
       };
     }),
     margen: await leerMargenSobreprecioPeso(),
+    margenOferta: await leerMargenOferta(),
   };
+}
+
+export type CompraHistorial = {
+  gastoItemId: number;
+  gastoId: number;
+  fecha: string;
+  emisorNombre: string;
+  cantidad: number;
+  unidad: UnidadMedida;
+  precio: number;
+  total: number;
+  esOferta: boolean;
+  esPrecioBase: boolean;
+  esPesoDesconocido: boolean;
+  esSobreprecio: boolean;
+  esReferencia: boolean;
+  fueraDeVentana: boolean;
+};
+
+export type HistorialPrecios = {
+  itemNombre: string;
+  compras: CompraHistorial[];
+  fechaLimite: string;
+};
+
+/**
+ * Historial de compras de un ítem del catálogo, para responder "¿cuánto pagué
+ * antes y dónde?" sin salir del gasto que se está cargando. Marca cuál de las
+ * filas es hoy el precio de referencia con el mismo criterio que usa
+ * `obtenerPreciosMinimos`, que es lo que hace legible una marca de sobreprecio.
+ * @param itemCatalogoId Ítem a consultar.
+ * @param limite Cuántas compras devolver, de la más reciente hacia atrás.
+ */
+export async function obtenerHistorialPrecios(
+  itemCatalogoId: number,
+  limite = 20
+): Promise<HistorialPrecios> {
+  const [item] = await db
+    .select({ nombre: itemsCatalogo.nombre })
+    .from(itemsCatalogo)
+    .where(eq(itemsCatalogo.id, itemCatalogoId))
+    .limit(1);
+
+  const filas = await db
+    .select({
+      gastoItemId: gastoItems.id,
+      gastoId: gastoItems.gastoId,
+      fecha: gastos.fecha,
+      emisorNombre: emisores.nombre,
+      cantidad: gastoItems.cantidad,
+      unidad: gastoItems.unidad,
+      precio: gastoItems.precio,
+      esOferta: gastoItems.esOferta,
+      esPrecioBase: gastoItems.esPrecioBase,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
+      esSobreprecio: gastoItems.esSobreprecio,
+    })
+    .from(gastoItems)
+    .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
+    .innerJoin(emisores, eq(emisores.id, gastos.emisorId))
+    .where(eq(gastoItems.itemCatalogoId, itemCatalogoId))
+    .orderBy(desc(gastos.fecha), desc(gastoItems.id))
+    .limit(limite);
+
+  const fechaLimite = fechaLimiteVentanaPrecio(
+    aISO(new Date()),
+    await leerVentanaMesesReferencia()
+  );
+
+  const compras = filas.map((f) => ({
+    ...f,
+    unidad: normalizarUnidad(f.unidad),
+    total: Number((f.precio * f.cantidad).toFixed(2)),
+    esReferencia: false,
+    fueraDeVentana: f.fecha < fechaLimite,
+  }));
+
+  for (const unidad of new Set(compras.map((c) => c.unidad))) {
+    const elegibles = compras.filter(
+      (c) =>
+        c.unidad === unidad &&
+        !c.fueraDeVentana &&
+        !c.esOferta &&
+        !c.esPesoDesconocido
+    );
+    const bases = elegibles.filter((c) => c.esPrecioBase);
+    const referencia = bases.length
+      ? bases[0]
+      : elegibles.reduce<(typeof elegibles)[number] | null>(
+          (mejor, c) => (mejor === null || c.precio < mejor.precio ? c : mejor),
+          null
+        );
+    if (referencia) referencia.esReferencia = true;
+  }
+
+  return {
+    itemNombre: item?.nombre ?? "Ítem",
+    compras,
+    fechaLimite,
+  };
+}
+
+/**
+ * Marca (o desmarca) una compra ya guardada como hecha en oferta, y limpia el
+ * sobreprecio que ese precio hubiera provocado en las demás compras del ítem.
+ * Existe porque el flag no se puede poner al cargar un gasto viejo: la línea
+ * puede ser la única del ítem, y entonces el formulario no tiene contra qué
+ * sugerirlo. Sólo *desmarca* sobreprecios que ya no superan la referencia —
+ * nunca marca uno nuevo, para no pisar una decisión manual del usuario.
+ * @returns Cuántas líneas dejaron de estar marcadas como sobreprecio.
+ */
+export async function marcarCompraComoOferta(
+  gastoItemId: number,
+  esOferta: boolean
+): Promise<{ sobrepreciosLimpiados: number }> {
+  const [linea] = await db
+    .select({ itemCatalogoId: gastoItems.itemCatalogoId })
+    .from(gastoItems)
+    .where(eq(gastoItems.id, gastoItemId))
+    .limit(1);
+  if (!linea?.itemCatalogoId) {
+    throw new Error("Esa línea no está vinculada a un ítem del catálogo");
+  }
+
+  await db
+    .update(gastoItems)
+    .set({
+      esOferta,
+      ...(esOferta ? { esPrecioBase: false, esSobreprecio: false } : {}),
+    })
+    .where(eq(gastoItems.id, gastoItemId));
+
+  const sobrepreciosLimpiados = await recalcularSobreprecioDeItem(
+    linea.itemCatalogoId
+  );
+
+  revalidatePath("/gastos");
+  revalidatePath("/reportes");
+  revalidatePath("/catalogos");
+  return { sobrepreciosLimpiados };
+}
+
+async function recalcularSobreprecioDeItem(itemCatalogoId: number) {
+  const margen = await leerMargenSobreprecioPeso();
+  const filas = await db
+    .select({
+      id: gastoItems.id,
+      gastoId: gastoItems.gastoId,
+      fecha: gastos.fecha,
+      unidad: gastoItems.unidad,
+      precio: gastoItems.precio,
+      esOferta: gastoItems.esOferta,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
+    })
+    .from(gastoItems)
+    .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
+    .where(
+      and(
+        eq(gastoItems.itemCatalogoId, itemCatalogoId),
+        eq(gastoItems.esSobreprecio, true)
+      )
+    );
+
+  let limpiados = 0;
+  for (const fila of filas) {
+    if (fila.esOferta || fila.esPesoDesconocido) {
+      await db
+        .update(gastoItems)
+        .set({ esSobreprecio: false })
+        .where(eq(gastoItems.id, fila.id));
+      limpiados += 1;
+      continue;
+    }
+    const unidad = normalizarUnidad(fila.unidad);
+    const minimos = await obtenerPreciosMinimos(
+      [itemCatalogoId],
+      fila.fecha,
+      fila.gastoId
+    );
+    const minimo = minimos.get(claveReferencia(itemCatalogoId, unidad));
+    if (minimo === undefined || !superaReferencia(fila.precio, minimo, unidad, margen)) {
+      await db
+        .update(gastoItems)
+        .set({ esSobreprecio: false })
+        .where(eq(gastoItems.id, fila.id));
+      limpiados += 1;
+    }
+  }
+  return limpiados;
 }

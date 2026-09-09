@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Pencil, Trash2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  LineChart,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +24,8 @@ import { NuevaCategoriaDialog } from "@/components/nueva-categoria-dialog";
 import { EmisorDialog } from "@/components/emisor-dialog";
 import { ProveedorCfeDialog } from "@/components/proveedor-cfe-dialog";
 import { ConfirmarBorradoDialog } from "@/components/confirmar-borrado-dialog";
+import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
+import { Input } from "@/components/ui/input";
 import {
   NuevoItemDialog,
   draftItemVacio,
@@ -172,6 +182,10 @@ export function CatalogosView({
   const [porPagina, setPorPagina] = useState<number>(10);
   const [numPaginaCategorias, setNumPaginaCategorias] = useState(1);
   const [numPaginaItems, setNumPaginaItems] = useState(1);
+  const [filtroItems, setFiltroItems] = useState("");
+  const [historialItem, setHistorialItem] =
+    useState<ItemCatalogoConCategoria | null>(null);
+
   const [numPaginaEmisores, setNumPaginaEmisores] = useState(1);
   const [numPaginaProveedores, setNumPaginaProveedores] = useState(1);
 
@@ -184,7 +198,17 @@ export function CatalogosView({
   }
 
   const paginaCategorias = paginar(categoriasList, numPaginaCategorias, porPagina);
-  const paginaItems = paginar(itemsList, numPaginaItems, porPagina);
+  const textoFiltro = filtroItems.trim().toLowerCase();
+  const itemsFiltrados = textoFiltro
+    ? itemsList.filter((i) =>
+        [i.nombre, i.marca, i.tamano, i.descripcion, i.categoriaNombre]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(textoFiltro)
+      )
+    : itemsList;
+  const paginaItems = paginar(itemsFiltrados, numPaginaItems, porPagina);
   const paginaEmisores = paginar(emisoresList, numPaginaEmisores, porPagina);
   const paginaProveedores = paginar(proveedoresList, numPaginaProveedores, porPagina);
 
@@ -341,7 +365,7 @@ export function CatalogosView({
             <span className="text-sm font-semibold">
               Ítems del catálogo{" "}
               <span className="font-normal text-muted-foreground">
-                ({itemsList.length})
+                ({itemsFiltrados.length})
               </span>
             </span>
             <Button
@@ -357,6 +381,17 @@ export function CatalogosView({
               <Plus className="h-3.5 w-3.5" />
               Nuevo ítem
             </Button>
+          </div>
+          <div className="border-b px-5 py-3">
+            <Input
+              value={filtroItems}
+              placeholder="Buscar un ítem para ver qué pagaste y dónde"
+              className="text-[13px]"
+              onChange={(e) => {
+                setFiltroItems(e.target.value);
+                setNumPaginaItems(1);
+              }}
+            />
           </div>
           <div className="divide-y">
             {paginaItems.paginaDatos.map((item) => (
@@ -380,6 +415,14 @@ export function CatalogosView({
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    title="Historial de precios"
+                    onClick={() => setHistorialItem(item)}
+                  >
+                    <LineChart className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => {
                       setItemEditandoId(item.id);
                       setItemDraft(draftDesdeItem(item));
@@ -398,14 +441,16 @@ export function CatalogosView({
                 </div>
               </div>
             ))}
-            {itemsList.length === 0 && (
+            {itemsFiltrados.length === 0 && (
               <div className="px-5 py-6 text-center text-sm text-muted-foreground">
-                Todavía no hay ítems catalogados.
+                {itemsList.length === 0
+                  ? "Todavía no hay ítems catalogados."
+                  : "Ningún ítem coincide con la búsqueda."}
               </div>
             )}
           </div>
           <PiePaginacion
-            total={itemsList.length}
+            total={itemsFiltrados.length}
             mostrando={paginaItems.paginaDatos.length}
             paginaActual={paginaItems.paginaActual}
             totalPaginas={paginaItems.totalPaginas}
@@ -682,6 +727,15 @@ export function CatalogosView({
           onConfirmar={handleConfirmarBorrado}
         />
       )}
+
+      <HistorialPreciosDialog
+        itemCatalogoId={historialItem?.id ?? null}
+        nombreItem={historialItem?.nombre ?? ""}
+        open={historialItem !== null}
+        onOpenChange={(open) => {
+          if (!open) setHistorialItem(null);
+        }}
+      />
     </div>
   );
 }

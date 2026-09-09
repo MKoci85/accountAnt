@@ -28,6 +28,7 @@ import {
   leerRpdEfectivo,
   leerTpmEfectivo,
   escribirDiasHaciaAtrasBcu,
+  escribirMargenOferta,
   escribirMargenSobreprecioPeso,
   escribirOpenRouterReferer,
   escribirTimeoutBcuMs,
@@ -38,6 +39,7 @@ import {
   escribirUrlIA,
   escribirVentanaMesesReferencia,
   leerDiasHaciaAtrasBcu,
+  leerMargenOferta,
   leerMargenSobreprecioPeso,
   leerOpenRouterReferer,
   leerTimeoutBcuMs,
@@ -56,6 +58,7 @@ import {
   OPENROUTER_REFERER_DEFAULT,
 } from "@/lib/config-server";
 import {
+  MARGEN_OFERTA_DEFAULT,
   MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
   MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
 } from "@/lib/precios-referencia";
@@ -260,6 +263,8 @@ export async function guardarProveedorActivoIA(proveedor: ProveedorIA) {
 export type ConfigAvanzada = {
   margenSobreprecioPeso: number;
   margenSobreprecioPesoPorDefecto: number;
+  margenOferta: number;
+  margenOfertaPorDefecto: number;
   ventanaMesesReferencia: number;
   ventanaMesesReferenciaPorDefecto: number;
   bcuDiasHaciaAtras: number;
@@ -282,6 +287,8 @@ export async function obtenerConfigAvanzada(): Promise<ConfigAvanzada> {
   return {
     margenSobreprecioPeso: await leerMargenSobreprecioPeso(),
     margenSobreprecioPesoPorDefecto: MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
+    margenOferta: await leerMargenOferta(),
+    margenOfertaPorDefecto: MARGEN_OFERTA_DEFAULT,
     ventanaMesesReferencia: await leerVentanaMesesReferencia(),
     ventanaMesesReferenciaPorDefecto: MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
     bcuDiasHaciaAtras: await leerDiasHaciaAtrasBcu(),
@@ -320,6 +327,12 @@ export async function guardarMargenSobreprecioPeso(valor: number) {
   );
   revalidatePath("/ajustes");
   revalidatePath("/reportes");
+  revalidatePath("/gastos");
+}
+
+export async function guardarMargenOferta(valor: number) {
+  await escribirMargenOferta(numeroPositivo(valor, "El margen de oferta"));
+  revalidatePath("/ajustes");
   revalidatePath("/gastos");
 }
 

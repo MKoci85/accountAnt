@@ -4,13 +4,15 @@ export type TipoBadgeLinea =
   | "hormiga"
   | "sobreprecio"
   | "precioBase"
-  | "pesoDesconocido";
+  | "pesoDesconocido"
+  | "oferta";
 
 const ESTILOS: Record<TipoBadgeLinea, string> = {
   hormiga: "bg-destructive/10 text-destructive",
   sobreprecio: "bg-destructive/15 text-destructive/80",
   precioBase: "bg-primary/15 text-primary",
   pesoDesconocido: "bg-amber-500/15 text-amber-500",
+  oferta: "bg-chart-2/20 text-chart-2",
 };
 
 const ESTILO_NECESARIO = "bg-accent text-accent-foreground";
@@ -20,6 +22,7 @@ const ETIQUETAS: Record<TipoBadgeLinea, string> = {
   sobreprecio: "Sobreprecio",
   precioBase: "Subió de precio",
   pesoDesconocido: "Sin peso",
+  oferta: "Oferta",
 };
 
 export function BadgeLinea({

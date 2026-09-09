@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  MARGEN_OFERTA_DEFAULT,
+  pareceOferta,
   claveReferencia,
   fechaLimiteVentanaPrecio,
   normalizarUnidad,
@@ -68,6 +70,21 @@ describe("superaReferencia", () => {
     expect(superaReferencia(103, 100, "kg", margen)).toBe(false);
     expect(superaReferencia(103.5, 100, "kg", margen)).toBe(true);
     expect(superaReferencia(104, 100, "L", margen)).toBe(true);
+  });
+});
+
+describe("pareceOferta", () => {
+  const margen = MARGEN_OFERTA_DEFAULT;
+
+  it("sugiere la oferta sólo cuando el precio está bastante por debajo", () => {
+    expect(pareceOferta(84, 100, margen)).toBe(true);
+    expect(pareceOferta(85, 100, margen)).toBe(false);
+    expect(pareceOferta(99, 100, margen)).toBe(false);
+    expect(pareceOferta(120, 100, margen)).toBe(false);
+  });
+
+  it("ignora la línea sin precio cargado", () => {
+    expect(pareceOferta(0, 100, margen)).toBe(false);
   });
 });
 
