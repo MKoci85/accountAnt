@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".claude/**",
+    // El instalador copia la app compilada dentro de installer/bundle.
+    "installer/**",
   ]),
 ]);
 

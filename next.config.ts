@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   allowedDevOrigins: [
     "win.burro-cordylus.ts.net",
     ...(process.env.DEV_LAN_IP ? [process.env.DEV_LAN_IP] : []),

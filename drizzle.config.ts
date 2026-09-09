@@ -5,6 +5,6 @@ export default defineConfig({
   schema: "./src/db/schema/index.ts",
   dialect: "sqlite",
   dbCredentials: {
-    url: "./data/control-gastos.db",
+    url: process.env.DATABASE_PATH ?? "./data/control-gastos.db",
   },
 });
