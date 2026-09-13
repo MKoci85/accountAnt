@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  desvincularDeCatalogo,
   esLineaDeServicio,
+  idItemProvisorio,
   lineaLibreNueva,
   lineasDesdeTicket,
   montoDeLinea,
@@ -275,5 +277,102 @@ describe("lineasDesdeTicket", () => {
     expect(l.item.id).toBe(42);
     expect(l.categoriaId).toBe(5);
     expect(l.bloqueada).toBe(true);
+  });
+});
+
+describe("origenTicket", () => {
+  it("guarda el texto del ticket aunque el renglón ya haya resuelto contra el catálogo", () => {
+    const [l] = lineasDesdeTicket([
+      delTicket({
+        nombreTicket: "COCA COLA 1,5 LT RET",
+        tamanoTicket: "1,5 LT",
+        itemCatalogo: {
+          id: 42,
+          nombre: "Coca Cola 1.5L",
+          marca: "Coca Cola",
+          tamano: "1.5L",
+          descripcion: null,
+          categoriaId: 5,
+          categoriaNombre: "Bebidas",
+        },
+      }),
+    ]);
+    expect(l.origenTicket).toEqual({
+      nombre: "COCA COLA 1,5 LT RET",
+      tamano: "1,5 LT",
+    });
+  });
+
+  it("también lo guarda en el renglón que quedó sin catalogar", () => {
+    const [l] = lineasDesdeTicket([delTicket({ nombreTicket: "ALGO RARO" })]);
+    expect(l.origenTicket?.nombre).toBe("ALGO RARO");
+  });
+});
+
+describe("idItemProvisorio", () => {
+  it("nunca repite un id, para que dos líneas sin catalogar no se confundan", () => {
+    const ids = [idItemProvisorio(), idItemProvisorio(), idItemProvisorio()];
+    expect(new Set(ids).size).toBe(3);
+    for (const id of ids) expect(id).toBeLessThan(0);
+  });
+});
+
+describe("desvincularDeCatalogo", () => {
+  const vinculada = linea({
+    item: {
+      id: 42,
+      nombre: "Coca Cola 1.5L",
+      marca: "Coca Cola",
+      tamano: "1.5L",
+      descripcion: null,
+      categoriaId: 5,
+      categoriaNombre: "Bebidas",
+    },
+    cantidad: 2,
+    precio: 130,
+    unidad: "un",
+    origenTicket: { nombre: "COCA COLA 1,5 LT RET", tamano: "1,5 LT" },
+    aliasRegistrado: { itemCatalogoId: 42, texto: "COCA COLA 1,5 LT RET" },
+  });
+
+  it("devuelve el texto del ticket y un id provisorio, para que reaparezca el buscador", () => {
+    const l = desvincularDeCatalogo(vinculada);
+    expect(l.item.nombre).toBe("COCA COLA 1,5 LT RET");
+    expect(l.item.tamano).toBe("1,5 LT");
+    expect(l.item.marca).toBeNull();
+    expect(l.item.id).toBeLessThan(0);
+  });
+
+  it("no toca lo que trajo el comprobante: cantidad, precio y unidad", () => {
+    const l = desvincularDeCatalogo(vinculada);
+    expect(l.cantidad).toBe(2);
+    expect(l.precio).toBe(130);
+    expect(l.unidad).toBe("un");
+  });
+
+  it("limpia el estado que dependía del ítem vinculado", () => {
+    const l = desvincularDeCatalogo(
+      linea({
+        ...vinculada,
+        esSobreprecio: true,
+        esPrecioBase: true,
+        esOferta: true,
+      })
+    );
+    expect(l.esSobreprecio).toBe(false);
+    expect(l.esPrecioBase).toBe(false);
+    expect(l.esOferta).toBe(false);
+    expect(l.aliasRegistrado).toBeUndefined();
+  });
+
+  it("no hace nada sobre una línea agregada a mano: no hay texto original que restaurar", () => {
+    const aMano = linea({ origenTicket: undefined });
+    expect(desvincularDeCatalogo(aMano)).toBe(aMano);
+  });
+
+  it("da ids distintos a dos líneas desvinculadas con el mismo texto", () => {
+    const a = desvincularDeCatalogo({ ...vinculada, key: "a" });
+    const b = desvincularDeCatalogo({ ...vinculada, key: "b" });
+    expect(a.item.id).not.toBe(b.item.id);
   });
 });

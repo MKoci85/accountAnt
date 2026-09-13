@@ -258,6 +258,28 @@ export async function registrarAliasTicket(
     .onConflictDoNothing();
 }
 
+/**
+ * Borra el alias que `registrarAliasTicket` aprendió, cuando el usuario deshace
+ * la vinculación de esa línea del ticket. Es la operación exactamente inversa:
+ * sin esto el próximo escaneo del mismo comercio volvería a reconocer mal la
+ * línea, que es justo lo que el usuario acaba de corregir a mano.
+ */
+export async function borrarAliasTicket(
+  itemCatalogoId: number,
+  texto: string
+) {
+  const limpio = texto.trim();
+  if (!limpio) return;
+  await db
+    .delete(itemsAliasTicket)
+    .where(
+      and(
+        eq(itemsAliasTicket.itemCatalogoId, itemCatalogoId),
+        eq(itemsAliasTicket.texto, limpio)
+      )
+    );
+}
+
 export async function crearItemCatalogo(datos: {
   nombre: string;
   marca?: string;

@@ -21,6 +21,7 @@ import {
   listarProveedoresCfe,
   obtenerOCrearEmisorGenerico,
   registrarAliasTicket,
+  borrarAliasTicket,
 } from "@/app/actions/catalogos";
 import {
   crearGasto,
@@ -54,6 +55,8 @@ import {
 } from "@/lib/precios-referencia";
 import { formatearMonto, hoyISO } from "@/lib/formato";
 import {
+  desvincularDeCatalogo,
+  idItemProvisorio,
   lineaLibreNueva,
   lineasDesdeGasto,
   lineasDesdeTicket,
@@ -334,20 +337,26 @@ export function NuevoGastoForm({
 
   function renombrarLinea(key: string, nombre: string) {
     setLineas((prev) =>
-      prev.map((l) =>
-        l.key === key
-          ? {
-              ...l,
-              item: {
-                ...l.item,
-                id: l.item.id > 0 ? -1 : l.item.id,
-                nombre,
-                marca: null,
-                tamano: null,
-              },
-            }
-          : l
-      )
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        // Escribir sobre el nombre de una línea ya vinculada la desvincula. El
+        // id provisorio se pide al contador y nunca es un literal: `-1` es el
+        // que le toca a la primera línea sin catalogar de un ticket, y dos
+        // líneas con el mismo id se confunden entre sí en `claveAgrupacion`.
+        const desvinculada = l.item.id > 0;
+        return {
+          ...l,
+          item: {
+            ...l.item,
+            id: desvinculada ? idItemProvisorio() : l.item.id,
+            nombre,
+            marca: null,
+            // El tamaño del ticket es la pista de qué era la línea ("· 1,5 LT"
+            // bajo el nombre), así que sobrevive al renombre.
+            tamano: l.origenTicket?.tamano ?? null,
+          },
+        };
+      })
     );
   }
 
@@ -386,13 +395,13 @@ export function NuevoGastoForm({
   function resolverLineaProvisoria(key: string, item: ItemCatalogoConCategoria) {
     const linea = lineas.find((l) => l.key === key);
     const textoTicket = linea?.item.nombre.trim() ?? "";
-    if (
-      linea &&
+    const registraAlias =
+      linea !== undefined &&
       linea.item.id <= 0 &&
       !linea.genericaEditable &&
-      textoTicket &&
-      textoTicket.toLowerCase() !== item.nombre.trim().toLowerCase()
-    ) {
+      textoTicket !== "" &&
+      textoTicket.toLowerCase() !== item.nombre.trim().toLowerCase();
+    if (registraAlias) {
       registrarAliasTicket(item.id, textoTicket).catch(() => {});
     }
     setLineas((prev) =>
@@ -404,9 +413,36 @@ export function NuevoGastoForm({
               categoriaId: item.categoriaId,
               categoriaNombre: item.categoriaNombre,
               genericaEditable: false,
+              aliasRegistrado: registraAlias
+                ? { itemCatalogoId: item.id, texto: textoTicket }
+                : l.aliasRegistrado,
             }
           : l
       )
+    );
+  }
+
+  /**
+   * Deshace una vinculación equivocada: la línea vuelve a mostrar el texto del
+   * ticket y su buscador, sin perder cantidad ni precio. Sólo se ofrece en
+   * líneas venidas de un ticket — una agregada a mano no tiene nada que
+   * restaurar y se quita y se vuelve a agregar.
+   *
+   * También borra el alias que la vinculación acababa de aprender: si no, el
+   * próximo escaneo del mismo comercio volvería a reconocer mal esta línea,
+   * que es justo lo que el usuario está corrigiendo.
+   */
+  function desvincularLinea(key: string) {
+    const linea = lineas.find((l) => l.key === key);
+    if (!linea?.origenTicket) return;
+    if (linea.aliasRegistrado) {
+      borrarAliasTicket(
+        linea.aliasRegistrado.itemCatalogoId,
+        linea.aliasRegistrado.texto
+      ).catch(() => {});
+    }
+    setLineas((prev) =>
+      prev.map((l) => (l.key === key ? desvincularDeCatalogo(l) : l))
     );
   }
 
@@ -782,6 +818,7 @@ export function NuevoGastoForm({
                     quitarLinea={quitarLinea}
                     renombrarLinea={renombrarLinea}
                     resolverLineaProvisoria={resolverLineaProvisoria}
+                    desvincularLinea={desvincularLinea}
                     abrirEdicionItemCatalogo={abrirEdicionItemCatalogo}
                     onCrearItemParaLinea={crearItemParaLinea}
                     sobreprecioDeLinea={sobreprecioDeLinea}

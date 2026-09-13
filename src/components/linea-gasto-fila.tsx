@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Pencil, Trash2 } from "lucide-react";
+import { Lock, Pencil, Trash2, Unlink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { BadgeLinea } from "@/components/badge-linea";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,7 @@ export function LineaGastoFila({
   quitarLinea,
   renombrarLinea,
   resolverLineaProvisoria,
+  desvincularLinea,
   abrirEdicionItemCatalogo,
   onCrearItemParaLinea,
   sobreprecioDeLinea,
@@ -63,6 +64,7 @@ export function LineaGastoFila({
   quitarLinea: (key: string) => void;
   renombrarLinea: (key: string, nombre: string) => void;
   resolverLineaProvisoria: (key: string, item: ItemCatalogoConCategoria) => void;
+  desvincularLinea: (key: string) => void;
   abrirEdicionItemCatalogo: (linea: LineaGasto) => void;
   onCrearItemParaLinea: (linea: LineaGasto) => void;
   sobreprecioDeLinea: (linea: LineaGasto) => boolean;
@@ -77,6 +79,11 @@ export function LineaGastoFila({
     !linea.sinCatalogo && (linea.item.id <= 0 || esGenericaEditable);
   const nombreEditable = linea.sinCatalogo || necesitaCatalogo;
   const vieneDelTicket = linea.item.id <= 0;
+  // Una línea del ticket ya vinculada al catálogo: el buscador desapareció, así
+  // que sin este botón corregir una elección equivocada obliga a borrar la
+  // línea entera y volver a tipear lo que el comprobante ya había traído.
+  const puedeDesvincular =
+    linea.origenTicket !== undefined && linea.item.id > 0;
   const eligeUnidad =
     !necesitaCatalogo &&
     !esServicio &&
@@ -119,6 +126,16 @@ export function LineaGastoFila({
               className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 hover:bg-accent hover:text-accent-foreground"
             >
               <Pencil className="h-3 w-3" />
+            </button>
+          )}
+          {puedeDesvincular && (
+            <button
+              type="button"
+              title={`Desvincular del catálogo y volver a "${linea.origenTicket?.nombre}" (del ticket)`}
+              onClick={() => desvincularLinea(linea.key)}
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 hover:bg-accent hover:text-accent-foreground"
+            >
+              <Unlink className="h-3 w-3" />
             </button>
           )}
           {necesitaCatalogo && (

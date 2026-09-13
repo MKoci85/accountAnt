@@ -28,6 +28,28 @@ export type LineaGasto = {
   sinCatalogo: boolean;
   bloqueada: boolean;
   genericaEditable?: boolean;
+  /**
+   * Texto crudo con el que el ticket nombró esta línea, conservado aunque la
+   * línea después se vincule a un ítem del catálogo: es lo único que permite
+   * deshacer una vinculación equivocada sin borrar la línea y volver a
+   * tipearla. Sólo lo llevan las líneas nacidas de un ticket — una agregada a
+   * mano no tiene nada que restaurar.
+   */
+  origenTicket?: OrigenTicket;
+  /**
+   * Alias que se dio de alta al vincular esta línea, para poder borrarlo si el
+   * usuario deshace la vinculación. Se guarda acá y no se recalcula al
+   * deshacer porque `resolverLineaProvisoria` no siempre escribe uno (si el
+   * texto del ticket coincidía con el nombre del ítem, no hay alias que
+   * borrar) y borrar de más se llevaría puesto un alias legítimo aprendido en
+   * otro escaneo.
+   */
+  aliasRegistrado?: { itemCatalogoId: number; texto: string };
+};
+
+export type OrigenTicket = {
+  nombre: string;
+  tamano: string | null;
 };
 
 export function montoDeLinea(precio: number | ""): number {
@@ -43,6 +65,15 @@ const CATEGORIA_SIN_ASIGNAR: Categoria = {
 };
 
 let contadorItemProvisorio = -1;
+
+/**
+ * Devuelve un id provisorio único para una línea todavía sin catalogar. Nunca
+ * reusar un literal (el `-1` que había en `renombrarLinea`): dos líneas con el
+ * mismo id provisorio se confunden entre sí en `claveAgrupacion`.
+ */
+export function idItemProvisorio(): number {
+  return contadorItemProvisorio--;
+}
 
 /**
  * @returns true si la línea pertenece a una categoría marcada como servicio
@@ -207,6 +238,10 @@ function agruparRepetidas(lineas: LineaGasto[]): LineaGasto[] {
   return [...agrupadas.values()];
 }
 
+function origenDeTicket(linea: LineaDesdeTicket): OrigenTicket {
+  return { nombre: linea.nombreTicket, tamano: linea.tamanoTicket };
+}
+
 export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
   const convertidas = lineas.map((linea) => {
     if (linea.itemCatalogo) {
@@ -224,6 +259,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
         esPesoDesconocido: false,
         sinCatalogo: false,
         bloqueada: linea.bloqueada,
+        origenTicket: origenDeTicket(linea),
       };
     }
 
@@ -251,10 +287,43 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
       esPesoDesconocido: false,
       sinCatalogo: false,
       bloqueada: false,
+      origenTicket: origenDeTicket(linea),
     };
   });
 
   return agruparRepetidas(convertidas);
+}
+
+/**
+ * Deshace la vinculación de una línea de ticket con un ítem del catálogo: le
+ * devuelve el nombre y el tamaño con los que el ticket la nombró, y un id
+ * provisorio nuevo para que la fila vuelva a mostrar el buscador. Cantidad,
+ * precio y unidad no se tocan: los trajo el comprobante, no la vinculación.
+ *
+ * Sólo tiene sentido sobre una línea con `origenTicket` — una agregada a mano
+ * no tiene texto original que restaurar, y ahí quitarla y volver a agregarla
+ * sigue siendo el camino.
+ */
+export function desvincularDeCatalogo(linea: LineaGasto): LineaGasto {
+  if (!linea.origenTicket) return linea;
+  return {
+    ...linea,
+    item: {
+      id: idItemProvisorio(),
+      nombre: linea.origenTicket.nombre,
+      marca: null,
+      tamano: linea.origenTicket.tamano,
+      descripcion: null,
+      categoriaId: linea.categoriaId,
+      categoriaNombre: linea.categoriaNombre,
+    },
+    esSobreprecio: false,
+    sobreprecioManual: false,
+    esPrecioBase: false,
+    esOferta: false,
+    genericaEditable: false,
+    aliasRegistrado: undefined,
+  };
 }
 
 /**
