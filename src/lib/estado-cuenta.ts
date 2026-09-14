@@ -11,20 +11,21 @@ const PREFIJOS_NO_CONSUMO = [
   "SALDO",
   "PAGOS",
   "PAGO ",
-  "SEGURO SALDO DEUDOR",
   "TOTAL TARJETA",
   "TOTAL ",
   "TARJETA No",
   "TARJETA N",
   "SU PAGO",
-  "INTERESES",
+  "CANCELACION",
+  "PAGO MINIMO",
+  "PAGO RECIBIDO",
 ];
 
 const UMBRAL_USD_FALLBACK = 500;
 
 const RE_FECHA = /^(\d{2})\/(\d{2})\/(\d{2})\b/;
 
-const RE_MONTO = /^-?[\d,]+\.\d{2}$/;
+const RE_MONTO = /^-?\s*[\d,]+\.\d{2}$/;
 
 /**
  * Busca la X del encabezado de la columna de dólares para separar monedas.
@@ -51,7 +52,7 @@ function esNoConsumo(texto: string): boolean {
 
 export function parsearMonto(texto: string): number | null {
   if (!RE_MONTO.test(texto)) return null;
-  const n = Number(texto.replace(/,/g, ""));
+  const n = Number(texto.replace(/[,\s]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 

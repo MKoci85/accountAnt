@@ -78,6 +78,7 @@ async function obtenerPreciosMinimos(
   for (const fila of filas) {
     if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
     if (fila.esOferta) continue;
+    if (fila.precio <= 0) continue;
     const clave = claveReferencia(fila.itemCatalogoId, normalizarUnidad(fila.unidad));
     const minimoActual = minimos.get(clave);
     if (minimoActual === undefined || fila.precio < minimoActual) {
@@ -192,6 +193,7 @@ export async function guardarGasto(
           serie: datos.serie ?? null,
           numero: datos.numero ?? null,
           montoTotal: datos.montoTotal ?? null,
+          creadoEn: new Date().toISOString(),
           gastoFijoId: datos.gastoFijoId ?? null,
         })
         .returning()
@@ -434,6 +436,7 @@ export async function obtenerGasto(id: number): Promise<GastoDetalle> {
 export type GastoResumen = {
   id: number;
   fecha: string;
+  creadoEn: string | null;
   emisorId: number;
   emisorNombre: string;
   sinComprobante: boolean;
@@ -449,6 +452,7 @@ async function listarGastosConDetalle() {
     .select({
       gastoId: gastos.id,
       fecha: gastos.fecha,
+      creadoEn: gastos.creadoEn,
       serie: gastos.serie,
       emisorId: emisores.id,
       emisorNombre: emisores.nombre,
@@ -478,6 +482,7 @@ async function listarGastosConDetalle() {
       gasto = {
         id: fila.gastoId,
         fecha: fila.fecha,
+        creadoEn: fila.creadoEn,
         emisorId: fila.emisorId,
         emisorNombre: fila.emisorNombre,
         sinComprobante: fila.serie === null,

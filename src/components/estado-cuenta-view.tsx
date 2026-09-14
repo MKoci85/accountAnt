@@ -160,7 +160,9 @@ export function EstadoCuentaView({
       setLineas(
         resultado.lineas.map((l) => ({
           ...l,
-          incluir: l.estado === "directo" || l.estado === "faltante",
+          incluir:
+            (l.montoPesos ?? 0) > 0 &&
+            (l.estado === "directo" || l.estado === "faltante"),
           descripcionEditada: l.descripcion,
           montoEditado: l.montoPesos !== null ? String(l.montoPesos) : "",
         })),
@@ -189,7 +191,7 @@ export function EstadoCuentaView({
 
   function montoFinal(linea: LineaEditable): number | null {
     const editado = parsearMonto(linea.montoEditado);
-    return editado !== null && editado > 0 ? editado : null;
+    return editado !== null && editado !== 0 ? editado : null;
   }
 
   function montoInvalido(linea: LineaEditable) {

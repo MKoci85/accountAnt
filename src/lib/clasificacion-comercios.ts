@@ -1,4 +1,8 @@
-export type RubroDirecto = "combustible" | "telepeaje" | "suscripcion";
+export type RubroDirecto =
+  | "combustible"
+  | "telepeaje"
+  | "suscripcion"
+  | "bancario";
 
 export type ClasificacionDirecta = {
   rubro: RubroDirecto;
@@ -35,6 +39,21 @@ const SUSCRIPCIONES_CONOCIDAS: { patron: string; emisor: string }[] = [
 export const CATEGORIA_COMBUSTIBLE = "Transporte";
 export const CATEGORIA_TELEPEAJE = "Transporte";
 export const CATEGORIA_SUSCRIPCION = "Suscripciones";
+export const CATEGORIA_BANCARIO = "Gastos bancarios";
+
+const CARGOS_BANCARIOS = [
+  "SEGURO SALDO DEUDOR",
+  "SEGURO DE VIDA",
+  "INTERESES",
+  "COMISION",
+  "CARGO POR",
+  "GASTOS ADMINISTRATIVOS",
+  "MANTENIMIENTO DE CUENTA",
+  "RECARGO POR MORA",
+  "IVA ",
+];
+
+const EMISOR_BANCARIO = "Banco";
 
 function normalizar(texto: string) {
   return texto
@@ -47,13 +66,31 @@ function normalizar(texto: string) {
  * Clasifica una línea de estado de cuenta en un rubro directo.
  * @param descripcion descripción de la línea tal como viene del estado de cuenta
  * @param esUSD si el importe está en dólares
+ * @param monto importe de la línea; si es negativo es un ajuste del resumen
  * @returns la clasificación, o null si va por la vía de cotejo contra gastos existentes
  */
 export function clasificarLinea(
   descripcion: string,
-  esUSD: boolean
+  esUSD: boolean,
+  monto: number
 ): ClasificacionDirecta | null {
   const texto = normalizar(descripcion);
+
+  if (monto < 0) {
+    return {
+      rubro: "bancario",
+      emisor: EMISOR_BANCARIO,
+      categoria: CATEGORIA_BANCARIO,
+    };
+  }
+
+  if (CARGOS_BANCARIOS.some((cargo) => texto.startsWith(cargo))) {
+    return {
+      rubro: "bancario",
+      emisor: EMISOR_BANCARIO,
+      categoria: CATEGORIA_BANCARIO,
+    };
+  }
 
   if (MARCAS_COMBUSTIBLE.some((marca) => contieneMarca(texto, marca))) {
     return {
