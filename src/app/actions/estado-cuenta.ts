@@ -213,7 +213,11 @@ async function analizarMovimiento(
     montoPesos = cotizacion === null ? null : mov.monto * cotizacion;
   }
 
-  const directo = clasificarLinea(mov.descripcion, mov.moneda === "USD");
+  const directo = clasificarLinea(
+    mov.descripcion,
+    mov.moneda === "USD",
+    mov.monto
+  );
   const nombreCategoria = directo
     ? directo.categoria
     : sugerirCategoriaComercio(mov.descripcion);
@@ -326,6 +330,7 @@ export async function importarMovimientos(seleccion: SeleccionImportacion[]) {
           fecha: linea.fecha,
           emisorId,
           montoTotal: linea.montoPesos,
+          creadoEn: new Date().toISOString(),
         })
         .returning()
         .get();

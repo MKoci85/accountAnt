@@ -24,6 +24,8 @@ export const gastos = sqliteTable(
 
     montoTotal: real("monto_total"),
 
+    creadoEn: text("creado_en"), // ISO 8601; null en gastos previos a la columna
+
     gastoFijoId: integer("gasto_fijo_id").references(() => gastosFijos.id, {
       onDelete: "set null",
     }),

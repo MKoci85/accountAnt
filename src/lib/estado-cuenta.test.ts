@@ -55,6 +55,11 @@ describe("parsearMonto", () => {
     expect(parsearMonto("1,000,000.00")).toBe(1000000);
   });
 
+  it("acepta el signo separado del número, como lo imprime el resumen", () => {
+    expect(parsearMonto("- 181.50")).toBe(-181.5);
+    expect(parsearMonto("- 11,726.44")).toBe(-11726.44);
+  });
+
   it("exige los dos decimales para no confundir un número suelto con un importe", () => {
     expect(parsearMonto("1234")).toBeNull();
     expect(parsearMonto("12.5")).toBeNull();
@@ -93,6 +98,34 @@ describe("parsearEstadoCuenta", () => {
       fila([["03/09/26", 50], ["COMPRA REAL", 100], ["100.00", 400]]),
     ]);
     expect(movimientos.map((m) => m.descripcion)).toEqual(["COMPRA REAL"]);
+  });
+
+  it("descarta el pago del saldo anterior en sus distintas redacciones", () => {
+    const movimientos = parsearEstadoCuenta([
+      fila([["24/08/26", 50], ["PAGOS", 100], ["- 11,726.44", 400]]),
+      fila([["24/08/26", 50], ["PAGO RECIBIDO", 100], ["- 5,000.00", 400]]),
+      fila([["24/08/26", 50], ["PAGO MINIMO", 100], ["- 5,000.00", 400]]),
+      fila([["24/08/26", 50], ["CANCELACION", 100], ["- 5,000.00", 400]]),
+    ]);
+    expect(movimientos).toEqual([]);
+  });
+
+  it("conserva los cargos del banco, que son gastos reales", () => {
+    const movimientos = parsearEstadoCuenta([
+      fila([["10/09/26", 50], ["SEGURO SALDO DEUDOR", 100], ["81.78", 400]]),
+      fila([["10/09/26", 50], ["INTERESES", 100], ["250.00", 400]]),
+    ]);
+    expect(movimientos.map((m) => m.descripcion)).toEqual([
+      "SEGURO SALDO DEUDOR",
+      "INTERESES",
+    ]);
+  });
+
+  it("conserva los importes negativos, que son descuentos del resumen", () => {
+    const [movimiento] = parsearEstadoCuenta([
+      fila([["14/08/26", 50], ["DTO.BROU- ANCAP", 100], ["- 181.50", 400]]),
+    ]);
+    expect(movimiento.monto).toBe(-181.5);
   });
 
   it("ignora las filas sin fecha, sin importe o sin descripción", () => {

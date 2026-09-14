@@ -1,0 +1,1 @@
+ALTER TABLE `gastos` ADD `creado_en` text;

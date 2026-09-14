@@ -169,6 +169,20 @@
       "when": 1788960056592,
       "tag": "0023_alias_de_ticket_por_item",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789342537696,
+      "tag": "0024_fecha_de_carga_en_gastos",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789342600000,
+      "tag": "0025_categoria_gastos_bancarios",
+      "breakpoints": true
     }
   ]
 }

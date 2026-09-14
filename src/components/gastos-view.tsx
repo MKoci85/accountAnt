@@ -48,7 +48,19 @@ const rangosFecha = [
 
 type RangoFechaKey = (typeof rangosFecha)[number]["key"];
 
+const camposFecha = [
+  { key: "gasto", label: "Fecha del gasto" },
+  { key: "carga", label: "Fecha de carga" },
+] as const;
+
+type CampoFechaKey = (typeof camposFecha)[number]["key"];
+
 const opcionesPorPagina = [10, 25, 50, 100] as const;
+
+function fechaDeFiltro(g: GastoResumen, campo: CampoFechaKey): string | null {
+  if (campo === "gasto") return g.fecha;
+  return g.creadoEn?.slice(0, 10) ?? null;
+}
 
 function fechaEnRango(
   fechaISO: string,
@@ -108,6 +120,7 @@ export function GastosView({
   const [rangoFecha, setRangoFecha] = useState<RangoFechaKey>(() =>
     desdeURL || hastaURL ? "personalizado" : "todas"
   );
+  const [campoFecha, setCampoFecha] = useState<CampoFechaKey>("gasto");
   const [porPagina, setPorPaginaState] = useState<number>(10);
   const [pagina, setPagina] = useState(1);
   const [modoCombinar, setModoCombinar] = useState(false);
@@ -183,6 +196,7 @@ export function GastosView({
   const aplicarCategoria = conResetDePagina(setCategoriaId);
   const aplicarEmisor = conResetDePagina(setEmisorId);
   const aplicarRangoFecha = conResetDePagina(setRangoFecha);
+  const aplicarCampoFecha = conResetDePagina(setCampoFecha);
   const aplicarPeriodo = conResetDePagina(
     (p: { desde: string; hasta: string }) => setPeriodo(p)
   );
@@ -209,7 +223,10 @@ export function GastosView({
       if (emisorId !== "todos" && String(g.emisorId) !== emisorId) {
         return false;
       }
-      if (!fechaEnRango(g.fecha, rangoFecha, hoy, periodo)) {
+      const fechaFiltrada = fechaDeFiltro(g, campoFecha);
+      if (fechaFiltrada === null) {
+        if (rangoFecha !== "todas") return false;
+      } else if (!fechaEnRango(fechaFiltrada, rangoFecha, hoy, periodo)) {
         return false;
       }
       if (q) {
@@ -219,7 +236,7 @@ export function GastosView({
       }
       return true;
     });
-  }, [gastos, busqueda, categoriaId, emisorId, rangoFecha, periodo]);
+  }, [gastos, busqueda, categoriaId, emisorId, rangoFecha, periodo, campoFecha]);
 
   const totalPaginas = Math.max(1, Math.ceil(gastosFiltrados.length / porPagina));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -310,6 +327,32 @@ export function GastosView({
               {rangosFecha.map((r) => (
                 <DropdownMenuRadioItem key={r.key} value={r.key} closeOnClick>
                   {r.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground" />
+            }
+          >
+            Según:{" "}
+            <span className="font-semibold text-foreground">
+              {campoFecha === "gasto" ? "fecha del gasto" : "fecha de carga"}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuRadioGroup
+              value={campoFecha}
+              onValueChange={(v) => aplicarCampoFecha(v as CampoFechaKey)}
+            >
+              {camposFecha.map((c) => (
+                <DropdownMenuRadioItem key={c.key} value={c.key} closeOnClick>
+                  {c.label}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -433,6 +476,13 @@ export function GastosView({
                       )}
                       <TableCell className={modoCombinar ? "text-muted-foreground" : "pl-5 text-muted-foreground"}>
                         {formatearFechaCorta(g.fecha)}
+                        {campoFecha === "carga" && (
+                          <div className="text-xs">
+                            {g.creadoEn
+                              ? `cargado ${formatearFechaCorta(g.creadoEn.slice(0, 10))}`
+                              : "sin fecha de carga"}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{g.emisorNombre}</div>
@@ -492,6 +542,10 @@ export function GastosView({
                         <div className="text-sm font-medium">{g.emisorNombre}</div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {formatearFechaCorta(g.fecha)} · {g.cantidadItems} ítems
+                          {campoFecha === "carga" &&
+                            (g.creadoEn
+                              ? ` · cargado ${formatearFechaCorta(g.creadoEn.slice(0, 10))}`
+                              : " · sin fecha de carga")}
                         </div>
                         {nota && (
                           <div className="mt-0.5 text-xs font-medium text-destructive">

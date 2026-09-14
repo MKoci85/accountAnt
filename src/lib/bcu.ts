@@ -100,9 +100,11 @@ export async function obtenerCotizacionUSD(
 }
 
 /**
- * Cotización de compra del dólar para una fecha, cacheada en la tabla `cotizaciones`.
+ * Cotización de venta del dólar para una fecha, cacheada en la tabla `cotizaciones`.
+ * Se usa la venta —no la compra— porque es la punta a la que el banco debita
+ * un consumo con tarjeta: con la compra el gasto en pesos queda subvaluado.
  * @param fecha fecha ISO pedida
- * @returns la cotización de compra, o null si no se pudo obtener
+ * @returns la cotización de venta, o null si no se pudo obtener
  */
 export async function obtenerCotizacionCacheada(
   fecha: string
@@ -112,7 +114,7 @@ export async function obtenerCotizacionCacheada(
     .from(cotizaciones)
     .where(eq(cotizaciones.fecha, fecha))
     .limit(1);
-  if (guardada) return guardada.compra;
+  if (guardada) return guardada.venta;
 
   const cotizacion = await obtenerCotizacionUSD(fecha);
   if (!cotizacion) return null;
@@ -127,5 +129,5 @@ export async function obtenerCotizacionCacheada(
     })
     .onConflictDoNothing();
 
-  return cotizacion.compra;
+  return cotizacion.venta;
 }

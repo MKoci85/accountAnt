@@ -1,0 +1,1 @@
+INSERT INTO `categorias` ("nombre", "color", "descripcion", "es_servicio") SELECT 'Gastos bancarios', '#a8737d', 'seguro saldo deudor, intereses, comision, cargo, mantenimiento de cuenta, mora, gastos administrativos', 1 WHERE NOT EXISTS (SELECT 1 FROM `categorias` WHERE "nombre" = 'Gastos bancarios');
