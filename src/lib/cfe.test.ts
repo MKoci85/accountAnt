@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({ db: {} }));
 
-const { parsearQR, parsearNombreItem } = await import("@/lib/cfe");
+const { parsearQR, parsearNombreItem, parsearComprobantePdfFacturalista } =
+  await import("@/lib/cfe");
 
 const PAYLOAD = "212345670012,101,A,1234,500.00,2026-09-03,ABC123";
 
@@ -94,5 +95,77 @@ describe("parsearNombreItem", () => {
 
   it("no parsea una medida que se coma todo el nombre", () => {
     expect(parsearNombreItem("500 GR")).toMatchObject({ nombre: "500 GR", tamano: null });
+  });
+});
+
+const PDF_FACTURALISTA = [
+  "DRESUR SA",
+  "SUAREZ, JOAQUIN",
+  "DURAZNO, Uruguay",
+  "RUT EMISOR TIPO DOCUMENTO",
+  "216171830015 e-Ticket",
+  "SERIE NUMERO FORMA DE PAGO VENCIMIENTO",
+  "B 5815221 Contado 16/09/2026",
+  "RECEPTOR DOCUMENTO",
+  "CONSUMO FINAL",
+  "NOMBRE DOMICILIO",
+  "FECHA DE DOCUMENTO MONEDA",
+  "16/09/2026 Peso Uruguayo",
+  "CANT NOMBRE DESCRIPCIÓN PU DESC IMPORTE",
+  "1,00 HAAS PASAS CON CHOCOLATE 70 GS HAAS PASAS CON CHOCOLATE 70 GS 110,00 0,00 110,00",
+  "Exp.Servicios 0,00",
+  "Subtotal gravado (22%) 90,16 Total iva (22%) 19,84",
+  "Subtotal no gravado 0,00 Total a pagar 110,00",
+  "Codigo de Seguridad: aEzv5E",
+].join("\n");
+
+describe("parsearComprobantePdfFacturalista", () => {
+  it("lee emisor, total, moneda e ítems del PDF", () => {
+    const detalle = parsearComprobantePdfFacturalista(PDF_FACTURALISTA);
+
+    expect(detalle).toMatchObject({
+      emisorNombre: "DRESUR SA",
+      direccion: "SUAREZ, JOAQUIN, DURAZNO, Uruguay",
+      total: 110,
+      moneda: "UYU",
+    });
+    expect(detalle.items).toEqual([
+      {
+        nombre: "HAAS PASAS CON CHOCOLATE 70 GS",
+        tamano: null,
+        unidades: null,
+        precio: 110,
+        pesoTicket: null,
+        precioPorKiloTicket: null,
+      },
+    ]);
+  });
+
+  it("colapsa la descripción repetida pero respeta una distinta", () => {
+    const conDescripcionPropia = PDF_FACTURALISTA.replace(
+      "HAAS PASAS CON CHOCOLATE 70 GS HAAS PASAS CON CHOCOLATE 70 GS",
+      "COCA COLA RETORNABLE FRIA 1,5 LT"
+    );
+
+    expect(
+      parsearComprobantePdfFacturalista(conDescripcionPropia).items[0]
+    ).toMatchObject({ nombre: "COCA COLA RETORNABLE FRIA", tamano: "1.5L" });
+  });
+
+  it("no toma el bloque de totales como ítems", () => {
+    const sinItems = PDF_FACTURALISTA.replace(
+      "1,00 HAAS PASAS CON CHOCOLATE 70 GS HAAS PASAS CON CHOCOLATE 70 GS 110,00 0,00 110,00\n",
+      ""
+    );
+
+    expect(() => parsearComprobantePdfFacturalista(sinItems)).toThrow(
+      /no encontrado/i
+    );
+  });
+
+  it("rechaza un PDF sin el encabezado de ítems", () => {
+    expect(() => parsearComprobantePdfFacturalista("otra cosa")).toThrow(
+      /formato esperado/i
+    );
   });
 });

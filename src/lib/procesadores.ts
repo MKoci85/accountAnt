@@ -2,6 +2,7 @@ export const FORMATOS_PROVEEDOR_CFE = [
   "scanntech",
   "taface",
   "ucfe",
+  "facturalista",
   "sicfe",
   "otro",
 ] as const;
@@ -32,6 +33,13 @@ export const PROCESADORES_CONOCIDOS: Procesador[] = [
     nombre: "uCFE (Uruware)",
     soportado: true,
     urlEjemplo: "https://www.ucfe.com.uy/ConsultaCfe/ConsultarCFE.aspx",
+  },
+  {
+    id: "facturalista",
+    nombre: "FacturaLista",
+    soportado: true,
+    urlEjemplo:
+      "https://cfe.facturalista.com.uy:9443/FacturaLista/controlador.ctr",
   },
   { id: "sicfe", nombre: "SICFE / FEMI", soportado: false },
 ];

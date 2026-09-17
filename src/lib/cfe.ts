@@ -194,6 +194,8 @@ export async function consultarProcesador(
       return consultarTaface(urlBase, datos);
     case "ucfe":
       return consultarUcfe(urlBase, datos);
+    case "facturalista":
+      return consultarFacturalista(urlBase, datos);
     default:
       throw new Error(
         "Este proveedor de CFE todavía no tiene consulta automática implementada"
@@ -488,6 +490,124 @@ async function consultarUcfe(
   const items = parsearItemsPdfUcfe(text.join("\n"));
 
   return { emisorNombre, direccion: null, items, total, moneda };
+}
+
+async function consultarFacturalista(
+  urlBase: string,
+  datos: DatosQR
+): Promise<DetalleComprobante> {
+  const body = new URLSearchParams({
+    action: "ConsultaCFE",
+    tipo: datos.tipoCfe,
+    serie: datos.serie,
+    numero: datos.numero,
+    monto: datos.monto,
+    codigo: datos.hash.slice(0, 6),
+    rut: datos.ruc,
+  });
+
+  const res = await fetch(urlBase.split("?")[0], {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    throw new Error(`El procesador respondió ${res.status}`);
+  }
+
+  if (!(res.headers.get("content-type") ?? "").includes("application/pdf")) {
+    throw new Error("Comprobante no encontrado en FacturaLista");
+  }
+
+  const pdf = await getDocumentProxy(new Uint8Array(await res.arrayBuffer()));
+  const { text } = await extractText(pdf, { mergePages: false });
+
+  return parsearComprobantePdfFacturalista(text.join("\n"));
+}
+
+const ENCABEZADO_ITEMS_FACTURALISTA =
+  /^CANT\s+NOMBRE\s+DESCRIPCI[OÓ]N\s+PU\s+DESC\s+IMPORTE$/i;
+
+const FILA_ITEM_FACTURALISTA =
+  /^(\d+(?:[.,]\d+)?)\s+(.+?)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)$/;
+
+/**
+ * Parsea el texto del PDF que FacturaLista devuelve como respuesta a la consulta.
+ * @param texto texto extraído del PDF con `unpdf`
+ * @returns detalle del comprobante
+ */
+export function parsearComprobantePdfFacturalista(
+  texto: string
+): DetalleComprobante {
+  const lineas = texto
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const inicioItems = lineas.findIndex((l) =>
+    ENCABEZADO_ITEMS_FACTURALISTA.test(l)
+  );
+  if (inicioItems === -1) {
+    throw new Error("El PDF de FacturaLista no tiene el formato esperado");
+  }
+
+  const finDatos = lineas.findIndex((l) => /^RUT EMISOR/i.test(l));
+  const emisorNombre = lineas[0] ?? "Comercio desconocido";
+  const direccion =
+    finDatos > 1 ? lineas.slice(1, finDatos).join(", ") : null;
+
+  const indiceMoneda = lineas.findIndex((l) =>
+    /^FECHA DE DOCUMENTO\s+MONEDA$/i.test(l)
+  );
+  const moneda = mapearMonedaUcfe(
+    indiceMoneda === -1
+      ? undefined
+      : lineas[indiceMoneda + 1]?.replace(/^\S+\s+/, "")
+  );
+
+  const totalCrudo = lineas
+    .find((l) => /Total a pagar\s+[\d.,]+/i.test(l))
+    ?.match(/Total a pagar\s+([\d.,]+)/i)?.[1];
+  const total = totalCrudo ? parsearMontoUY(totalCrudo) : null;
+
+  const items: ItemComprobante[] = [];
+  for (let i = inicioItems + 1; i < lineas.length; i++) {
+    const linea = lineas[i];
+    if (/^(Exp\.Servicios|Subtotal|Total)/i.test(linea)) break;
+
+    const match = linea.match(FILA_ITEM_FACTURALISTA);
+    if (!match) continue;
+
+    const [, , textoCrudo, , , importeCrudo] = match;
+    const { nombre, tamano, unidades } = parsearNombreItem(
+      sinDescripcionRepetida(textoCrudo)
+    );
+
+    items.push({
+      nombre,
+      tamano,
+      unidades,
+      precio: parsearMontoUY(importeCrudo),
+      pesoTicket: null,
+      precioPorKiloTicket: null,
+    });
+  }
+
+  if (items.length === 0) {
+    throw new Error("Comprobante no encontrado en FacturaLista");
+  }
+
+  return { emisorNombre, direccion, items, total, moneda };
+}
+
+function sinDescripcionRepetida(texto: string): string {
+  const palabras = texto.split(/\s+/);
+  if (palabras.length % 2 !== 0) return texto;
+
+  const mitad = palabras.length / 2;
+  const nombre = palabras.slice(0, mitad).join(" ");
+  return nombre === palabras.slice(mitad).join(" ") ? nombre : texto;
 }
 
 function mapearMonedaUcfe(texto: string | undefined): string | null {
