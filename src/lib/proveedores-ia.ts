@@ -1,5 +1,5 @@
 export type ProveedorIA =
-  "anthropic" | "gemini" | "openai" | "groq" | "openrouter" | "opencode-zen";
+  "anthropic" | "gemini" | "openai" | "groq" | "openrouter";
 
 type FormatoIA = "anthropic" | "gemini" | "openai-compatible";
 
@@ -110,23 +110,6 @@ export const PROVEEDORES: ConfigProveedor[] = [
       },
     },
     urlKeys: "https://openrouter.ai/keys",
-  },
-  {
-    id: "opencode-zen",
-    nombre: "OpenCode Zen",
-    modelo: "big-pickle",
-    formato: "openai-compatible",
-    baseUrl: "https://opencode.ai/zen/v1/chat/completions",
-    avisoPrivacidad:
-      "La cuenta de OpenCode Zen exige auto-recarga con tarjeta habilitada por defecto (recarga US$20 al bajar de US$5). Si el modelo gratuito deja de serlo, el proveedor puede cobrar automáticamente: conviene revisar esa configuración en opencode.ai antes de usarlo.",
-    avisoChat:
-      "Los modelos gratuitos de Zen son de disponibilidad temporal y no tienen soporte de imagen confirmado: usalo solo para chat de texto, no para el flujo de foto de ticket.",
-    catalogo: {
-      url: "https://opencode.ai/zen/v1/models",
-      urlListado: "https://opencode.ai/docs/zen/",
-      esGratuito: (m) => typeof m.id === "string" && m.id.endsWith("-free"),
-    },
-    urlKeys: "https://opencode.ai/auth",
   },
 ];
 
