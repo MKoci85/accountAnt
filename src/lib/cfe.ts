@@ -196,6 +196,8 @@ export async function consultarProcesador(
       return consultarUcfe(urlBase, datos);
     case "facturalista":
       return consultarFacturalista(urlBase, datos);
+    case "ijserv":
+      return consultarIjserv(urlBase, datos);
     default:
       throw new Error(
         "Este proveedor de CFE todavía no tiene consulta automática implementada"
@@ -608,6 +610,115 @@ function sinDescripcionRepetida(texto: string): string {
   const mitad = palabras.length / 2;
   const nombre = palabras.slice(0, mitad).join(" ");
   return nombre === palabras.slice(mitad).join(" ") ? nombre : texto;
+}
+
+async function consultarIjserv(
+  urlBase: string,
+  datos: DatosQR
+): Promise<DetalleComprobante> {
+  const body = new URLSearchParams({
+    rut: datos.ruc,
+    tipoCFE: datos.tipoCfe,
+    serie: datos.serie,
+    numero: datos.numero,
+    monto: datos.monto,
+    codSeguridad: datos.hash.slice(0, 6),
+  });
+
+  const res = await fetch(urlBase, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    throw new Error(`El procesador respondió ${res.status}`);
+  }
+
+  if (!(res.headers.get("content-type") ?? "").includes("application/pdf")) {
+    throw new Error("Comprobante no encontrado en iJServ");
+  }
+
+  const pdf = await getDocumentProxy(new Uint8Array(await res.arrayBuffer()));
+  const { text } = await extractText(pdf, { mergePages: false });
+
+  return parsearComprobantePdfIjserv(text.join("\n"));
+}
+
+const ENCABEZADO_ITEMS_IJSERV =
+  /^Producto\s+Cantidad\s+Precio\s+Monto(\s+IVA)?$/i;
+
+const FILA_ITEM_IJSERV =
+  /^(?:\d+\s+)?(.+?)((?:\s+\d+(?:\.\d+)?){3,4})$/;
+
+const FECHA_ISO_IJSERV = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Parsea el texto del PDF que iJServ devuelve como respuesta a la consulta.
+ * @param texto texto extraído del PDF con `unpdf`
+ * @returns detalle del comprobante
+ */
+export function parsearComprobantePdfIjserv(texto: string): DetalleComprobante {
+  const lineas = texto
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const inicioItems = lineas.findIndex((l) => ENCABEZADO_ITEMS_IJSERV.test(l));
+  if (inicioItems === -1) {
+    throw new Error("El PDF de iJServ no tiene el formato esperado");
+  }
+
+  const finCabecera = lineas.findIndex((l) => /^RUT:/i.test(l));
+  const cabecera = lineas
+    .slice(0, finCabecera === -1 ? 0 : finCabecera)
+    .filter((l) => !FECHA_ISO_IJSERV.test(l));
+  const emisorNombre = cabecera[0] ?? "Comercio desconocido";
+  const direccion =
+    cabecera
+      .slice(1)
+      .filter((l) => l !== emisorNombre)
+      .join(", ") || null;
+
+  const moneda = mapearMonedaUcfe(
+    lineas
+      .find((l) => /^Tipo moneda:/i.test(l))
+      ?.replace(/^Tipo moneda:\s*/i, "")
+  );
+
+  const totalCrudo = lineas
+    .find((l) => /^TOTAL:\s*[\d.]+$/i.test(l))
+    ?.match(/^TOTAL:\s*([\d.]+)$/i)?.[1];
+  const total = totalCrudo ? Number(totalCrudo) : null;
+
+  const items: ItemComprobante[] = [];
+  for (let i = inicioItems + 1; i < lineas.length; i++) {
+    const linea = lineas[i];
+    if (/^(Tipo moneda|Total|Tasa|Res\.)/i.test(linea)) break;
+
+    const match = linea.match(FILA_ITEM_IJSERV);
+    if (!match) continue;
+
+    const [, nombreCrudo, numeros] = match;
+    const [cantidad, , monto] = numeros.trim().split(/\s+/).map(Number);
+    if (!Number.isFinite(monto) || monto <= 0) continue;
+
+    const { nombre, tamano, unidades } = parsearNombreItem(nombreCrudo);
+    items.push({
+      nombre,
+      tamano,
+      unidades: Number.isInteger(cantidad) && cantidad > 0 ? cantidad : unidades,
+      precio: monto,
+      pesoTicket: null,
+      precioPorKiloTicket: null,
+    });
+  }
+
+  if (items.length === 0) {
+    throw new Error("Comprobante no encontrado en iJServ");
+  }
+
+  return { emisorNombre, direccion, items, total, moneda };
 }
 
 function mapearMonedaUcfe(texto: string | undefined): string | null {

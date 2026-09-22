@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({ db: {} }));
 
-const { parsearQR, parsearNombreItem, parsearComprobantePdfFacturalista } =
-  await import("@/lib/cfe");
+const {
+  parsearQR,
+  parsearNombreItem,
+  parsearComprobantePdfFacturalista,
+  parsearComprobantePdfIjserv,
+} = await import("@/lib/cfe");
 
 const PAYLOAD = "212345670012,101,A,1234,500.00,2026-09-03,ABC123";
 
@@ -165,6 +169,93 @@ describe("parsearComprobantePdfFacturalista", () => {
 
   it("rechaza un PDF sin el encabezado de ítems", () => {
     expect(() => parsearComprobantePdfFacturalista("otra cosa")).toThrow(
+      /formato esperado/i
+    );
+  });
+});
+
+const PDF_IJSERV = [
+  "2026-09-21",
+  "Xiviller HNOS LTDA",
+  "Xiviller HNOS LTDA",
+  "PUIG 661",
+  "RUT: 060003240014",
+  "e-Ticket",
+  "A-4089198",
+  "CONTADO",
+  "CONSUMO FINAL",
+  "Producto Cantidad Precio Monto IVA",
+  "001001 SUPER 38.350 88.67 3400.49",
+  "Tipo moneda: UYU",
+  "Total monto no gravado: 3401.00",
+  "Tasa mínima IVA: 10.000",
+  "Tasa básica IVA: 22.000",
+  "TOTAL: 3401.00",
+  "Res. Nro.",
+  "Puede verificar comprobante en: http://www.ijserv.com/eFactura",
+  "Nro. CAE: 90260465092",
+  "Código de seguridad: qj5G/R",
+].join("\n");
+
+describe("parsearComprobantePdfIjserv", () => {
+  it("lee emisor, total, moneda e ítems del PDF", () => {
+    const detalle = parsearComprobantePdfIjserv(PDF_IJSERV);
+
+    expect(detalle).toMatchObject({
+      emisorNombre: "Xiviller HNOS LTDA",
+      direccion: "PUIG 661",
+      total: 3401,
+      moneda: "UYU",
+    });
+    expect(detalle.items).toEqual([
+      {
+        nombre: "SUPER",
+        tamano: null,
+        unidades: null,
+        precio: 3400.49,
+        pesoTicket: null,
+        precioPorKiloTicket: null,
+      },
+    ]);
+  });
+
+  it("toma la cantidad como unidades sólo cuando es entera", () => {
+    const porUnidad = PDF_IJSERV.replace(
+      "001001 SUPER 38.350 88.67 3400.49",
+      "002010 COCA COLA 1.5 LT 2.000 110.00 220.00"
+    );
+
+    expect(parsearComprobantePdfIjserv(porUnidad).items[0]).toMatchObject({
+      nombre: "COCA COLA",
+      tamano: "1.5L",
+      unidades: 2,
+      precio: 220,
+    });
+  });
+
+  it("lee el monto aunque la fila traiga la columna de IVA", () => {
+    const conIva = PDF_IJSERV.replace(
+      "001001 SUPER 38.350 88.67 3400.49",
+      "002010 GALLETITAS 1.000 180.41 180.41 22.000"
+    );
+
+    expect(parsearComprobantePdfIjserv(conIva).items[0]).toMatchObject({
+      unidades: 1,
+      precio: 180.41,
+    });
+  });
+
+  it("no toma el bloque de totales como ítems", () => {
+    const sinItems = PDF_IJSERV.replace(
+      "001001 SUPER 38.350 88.67 3400.49\n",
+      ""
+    );
+
+    expect(() => parsearComprobantePdfIjserv(sinItems)).toThrow(/no encontrado/i);
+  });
+
+  it("rechaza un PDF sin el encabezado de ítems", () => {
+    expect(() => parsearComprobantePdfIjserv("otra cosa")).toThrow(
       /formato esperado/i
     );
   });

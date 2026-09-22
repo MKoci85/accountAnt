@@ -3,6 +3,7 @@ export const FORMATOS_PROVEEDOR_CFE = [
   "taface",
   "ucfe",
   "facturalista",
+  "ijserv",
   "sicfe",
   "otro",
 ] as const;
@@ -40,6 +41,12 @@ export const PROCESADORES_CONOCIDOS: Procesador[] = [
     soportado: true,
     urlEjemplo:
       "https://cfe.facturalista.com.uy:9443/FacturaLista/controlador.ctr",
+  },
+  {
+    id: "ijserv",
+    nombre: "iJServ",
+    soportado: true,
+    urlEjemplo: "https://www.ijserv.com/eFactura",
   },
   { id: "sicfe", nombre: "SICFE / FEMI", soportado: false },
 ];
