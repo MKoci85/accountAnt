@@ -1,16 +1,40 @@
 import Link from "next/link";
-import { ShoppingBasket } from "lucide-react";
+import { ChevronRight, Combine, ShoppingBasket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageContainer } from "@/components/page-container";
 import { obtenerResumenDashboard } from "@/app/actions/gastos";
+import { contarGruposItemsSimilares } from "@/app/actions/catalogos";
 import { formatearMonto, formatearFechaLarga, nombreMes } from "@/lib/formato";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const resumen = await obtenerResumenDashboard();
+  const [resumen, gruposItemsSimilares] = await Promise.all([
+    obtenerResumenDashboard(),
+    contarGruposItemsSimilares(),
+  ]);
+  const revisiones = [
+    {
+      cantidad: resumen.gruposGastosCombinables,
+      href: "/gastos?combinables=1",
+      texto:
+        resumen.gruposGastosCombinables === 1
+          ? "1 grupo de gastos que se podría combinar"
+          : `${resumen.gruposGastosCombinables} grupos de gastos que se podrían combinar`,
+      detalle: "mismo comercio y misma fecha",
+    },
+    {
+      cantidad: gruposItemsSimilares,
+      href: "/catalogos?similares=1",
+      texto:
+        gruposItemsSimilares === 1
+          ? "1 grupo de ítems similares en el catálogo"
+          : `${gruposItemsSimilares} grupos de ítems similares en el catálogo`,
+      detalle: "mismo nombre, marca y presentación",
+    },
+  ].filter((r) => r.cantidad > 0);
 
   return (
     <PageContainer gap={7}>
@@ -49,6 +73,34 @@ export default async function Home() {
           hint="falta completar proveedor de CFE"
         />
       </div>
+
+      {revisiones.length > 0 && (
+        <Card className="py-0">
+          <div className="border-b px-5 py-4">
+            <span className="text-[15px] font-semibold">Para revisar</span>
+          </div>
+          <CardContent className="divide-y px-0 py-0">
+            {revisiones.map((r) => (
+              <Link
+                key={r.href}
+                href={r.href}
+                className="flex items-center gap-3.5 px-5 py-3.5 transition-colors hover:bg-muted/50"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent">
+                  <Combine className="h-[17px] w-[17px] text-accent-foreground" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium">{r.texto}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {r.detalle}
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="py-0">
         <div className="flex items-center justify-between border-b px-5 py-4">

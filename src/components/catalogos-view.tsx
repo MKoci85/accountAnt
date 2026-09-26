@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Plus,
   Pencil,
@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LineChart,
+  Combine,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { EmisorDialog } from "@/components/emisor-dialog";
 import { ProveedorCfeDialog } from "@/components/proveedor-cfe-dialog";
 import { ConfirmarBorradoDialog } from "@/components/confirmar-borrado-dialog";
 import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
+import { ItemsSimilaresDialog } from "@/components/items-similares-dialog";
 import { Input } from "@/components/ui/input";
 import {
   NuevoItemDialog,
@@ -40,6 +42,7 @@ import {
   borrarProveedorCfe,
 } from "@/app/actions/catalogos";
 import { buscarProcesador } from "@/lib/procesadores";
+import { agruparItemsSimilares, clavePar, paresDe } from "@/lib/duplicados";
 import type { categorias, emisores, proveedoresCfe } from "@/db/schema";
 
 type Categoria = typeof categorias.$inferSelect;
@@ -166,13 +169,19 @@ export function CatalogosView({
   itemsIniciales,
   emisoresIniciales,
   proveedoresIniciales,
+  comprasPorItemIniciales,
+  similaresDescartados,
+  abrirSimilares,
 }: {
   categoriasIniciales: Categoria[];
   itemsIniciales: ItemCatalogoConCategoria[];
   emisoresIniciales: Emisor[];
   proveedoresIniciales: ProveedorCfe[];
+  comprasPorItemIniciales: Record<number, number>;
+  similaresDescartados: string[];
+  abrirSimilares: boolean;
 }) {
-  const [tab, setTab] = useState<TabKey>("categorias");
+  const [tab, setTab] = useState<TabKey>(abrirSimilares ? "items" : "categorias");
 
   const [categoriasList, setCategoriasList] = useState(categoriasIniciales);
   const [itemsList, setItemsList] = useState(itemsIniciales);
@@ -185,6 +194,46 @@ export function CatalogosView({
   const [filtroItems, setFiltroItems] = useState("");
   const [historialItem, setHistorialItem] =
     useState<ItemCatalogoConCategoria | null>(null);
+  const [comprasPorItem, setComprasPorItem] = useState(comprasPorItemIniciales);
+  const [descartados, setDescartados] = useState(
+    () => new Set(similaresDescartados)
+  );
+  const [similaresOpen, setSimilaresOpen] = useState(abrirSimilares);
+
+  const gruposSimilares = useMemo(() => {
+    const porId = new Map(itemsList.map((i) => [i.id, i]));
+    return agruparItemsSimilares(itemsList, descartados).map((ids) =>
+      ids.map((id) => porId.get(id)!)
+    );
+  }, [itemsList, descartados]);
+
+  function handleCombinado(
+    item: ItemCatalogoConCategoria,
+    absorbidosIds: number[],
+    descartadosActuales: string[]
+  ) {
+    setItemsList((prev) =>
+      ordenarPorNombre(
+        prev
+          .filter((i) => !absorbidosIds.includes(i.id))
+          .map((i) => (i.id === item.id ? item : i))
+      )
+    );
+    setComprasPorItem((prev) => ({
+      ...prev,
+      [item.id]: [item.id, ...absorbidosIds].reduce(
+        (acc, id) => acc + (prev[id] ?? 0),
+        0
+      ),
+    }));
+    setDescartados(new Set(descartadosActuales));
+  }
+
+  function handleDescartado(ids: number[]) {
+    setDescartados(
+      (prev) => new Set([...prev, ...paresDe(ids).map(([a, b]) => clavePar(a, b))])
+    );
+  }
 
   const [numPaginaEmisores, setNumPaginaEmisores] = useState(1);
   const [numPaginaProveedores, setNumPaginaProveedores] = useState(1);
@@ -265,6 +314,9 @@ export function CatalogosView({
             }`}
           >
             {t.label}
+            {t.key === "items" && gruposSimilares.length > 0 && (
+              <span className="ml-1.5 inline-block h-1.5 w-1.5 -translate-y-0.5 rounded-full bg-destructive" />
+            )}
           </button>
         ))}
       </div>
@@ -368,19 +420,34 @@ export function CatalogosView({
                 ({itemsFiltrados.length})
               </span>
             </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => {
-                setItemEditandoId(null);
-                setItemDraft(draftItemVacio);
-                setItemDialogOpen(true);
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Nuevo ítem
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {gruposSimilares.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSimilaresOpen(true)}
+                >
+                  <Combine className="h-3.5 w-3.5" />
+                  {gruposSimilares.length === 1
+                    ? "1 grupo similar"
+                    : `${gruposSimilares.length} grupos similares`}
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  setItemEditandoId(null);
+                  setItemDraft(draftItemVacio);
+                  setItemDialogOpen(true);
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Nuevo ítem
+              </Button>
+            </div>
           </div>
           <div className="border-b px-5 py-3">
             <Input
@@ -727,6 +794,15 @@ export function CatalogosView({
           onConfirmar={handleConfirmarBorrado}
         />
       )}
+
+      <ItemsSimilaresDialog
+        open={similaresOpen}
+        onOpenChange={setSimilaresOpen}
+        grupos={gruposSimilares}
+        comprasPorItem={comprasPorItem}
+        onCombinado={handleCombinado}
+        onDescartado={handleDescartado}
+      />
 
       <HistorialPreciosDialog
         itemCatalogoId={historialItem?.id ?? null}

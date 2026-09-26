@@ -7,12 +7,14 @@ import {
   categorias,
   emisores,
   itemsCatalogo,
+  gastosCombinablesDescartados,
 } from "@/db/schema";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect, notFound } from "next/navigation";
 import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
 import { aISO } from "@/lib/formato";
+import { agruparGastosCombinables, clavePar, paresDe } from "@/lib/duplicados";
 import {
   fechaLimiteVentanaPrecio,
   normalizarUnidad,
@@ -344,6 +346,32 @@ export async function combinarGastos(idsGastos: number[]) {
       .where(inArray(gastoItems.gastoId, idsAEliminar))
       .run();
 
+    const descartesHeredados = tx
+      .select({
+        menor: gastosCombinablesDescartados.gastoMenorId,
+        mayor: gastosCombinablesDescartados.gastoMayorId,
+      })
+      .from(gastosCombinablesDescartados)
+      .where(
+        or(
+          inArray(gastosCombinablesDescartados.gastoMenorId, idsAEliminar),
+          inArray(gastosCombinablesDescartados.gastoMayorId, idsAEliminar)
+        )
+      )
+      .all()
+      .map((d) => (idsAEliminar.includes(d.menor) ? d.mayor : d.menor))
+      .filter((otro) => !idsUnicos.includes(otro))
+      .map((otro) => ({
+        gastoMenorId: Math.min(destino.id, otro),
+        gastoMayorId: Math.max(destino.id, otro),
+      }));
+    if (descartesHeredados.length > 0) {
+      tx.insert(gastosCombinablesDescartados)
+        .values(descartesHeredados)
+        .onConflictDoNothing()
+        .run();
+    }
+
     tx.update(gastos)
       .set({ montoTotal: montoTotalCombinado })
       .where(eq(gastos.id, destino.id))
@@ -352,6 +380,38 @@ export async function combinarGastos(idsGastos: number[]) {
     tx.delete(gastos).where(inArray(gastos.id, idsAEliminar)).run();
   });
 
+  revalidatePath("/gastos");
+  revalidatePath("/");
+}
+
+/**
+ * @returns las claves (`clavePar`) de los pares de gastos que el usuario ya
+ * marcó como compras distintas.
+ */
+export async function listarGastosCombinablesDescartados() {
+  const filas = await db
+    .select({
+      menor: gastosCombinablesDescartados.gastoMenorId,
+      mayor: gastosCombinablesDescartados.gastoMayorId,
+    })
+    .from(gastosCombinablesDescartados);
+  return filas.map((f) => clavePar(f.menor, f.mayor));
+}
+
+/**
+ * Registra que los gastos elegidos son compras distintas aunque compartan
+ * comercio y fecha (dos idas al súper el mismo día), para que dejen de
+ * ofrecerse como combinables entre sí.
+ */
+export async function descartarGastosCombinables(ids: number[]) {
+  const pares = paresDe(ids);
+  if (pares.length === 0) {
+    throw new Error("Elegí al menos dos gastos");
+  }
+  await db
+    .insert(gastosCombinablesDescartados)
+    .values(pares.map(([gastoMenorId, gastoMayorId]) => ({ gastoMenorId, gastoMayorId })))
+    .onConflictDoNothing();
   revalidatePath("/gastos");
   revalidatePath("/");
 }
@@ -439,6 +499,7 @@ export type GastoResumen = {
   creadoEn: string | null;
   emisorId: number;
   emisorNombre: string;
+  emisorGenerico: boolean;
   sinComprobante: boolean;
   emisorPendiente: boolean;
   categorias: { id: number; nombre: string; color: string | null }[];
@@ -457,6 +518,7 @@ async function listarGastosConDetalle() {
       emisorId: emisores.id,
       emisorNombre: emisores.nombre,
       emisorRuc: emisores.ruc,
+      emisorGenerico: emisores.esGenerico,
       proveedorCfeId: emisores.proveedorCfeId,
       categoriaId: categorias.id,
       categoriaNombre: categorias.nombre,
@@ -485,6 +547,7 @@ async function listarGastosConDetalle() {
         creadoEn: fila.creadoEn,
         emisorId: fila.emisorId,
         emisorNombre: fila.emisorNombre,
+        emisorGenerico: fila.emisorGenerico,
         sinComprobante: fila.serie === null,
         emisorPendiente:
           fila.emisorRuc !== null && fila.proveedorCfeId === null,
@@ -525,7 +588,11 @@ export async function obtenerResumenDashboard() {
   const mesSiguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
   const inicioMesSiguiente = aISO(mesSiguiente);
 
-  const gastosDelMes = (await listarGastosConDetalle()).filter(
+  const [todos, descartados] = await Promise.all([
+    listarGastosConDetalle(),
+    listarGastosCombinablesDescartados(),
+  ]);
+  const gastosDelMes = todos.filter(
     (g) => g.fecha >= inicioMes && g.fecha < inicioMesSiguiente
   );
 
@@ -557,6 +624,8 @@ export async function obtenerResumenDashboard() {
     totalHormiga,
     porcentajeHormiga: totalMes > 0 ? Math.round((totalHormiga / totalMes) * 100) : 0,
     emisoresPendientes: emisoresPendientes.length,
+    gruposGastosCombinables: agruparGastosCombinables(todos, new Set(descartados))
+      .length,
     gastosRecientes: gastosDelMes.slice(0, 5),
   };
 }

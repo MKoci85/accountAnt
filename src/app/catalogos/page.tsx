@@ -3,19 +3,29 @@ import {
   listarItemsCatalogo,
   listarEmisores,
   listarProveedoresCfe,
+  contarComprasPorItem,
+  listarItemsSimilaresDescartados,
 } from "@/app/actions/catalogos";
 import { CatalogosView } from "@/components/catalogos-view";
 import { PageContainer } from "@/components/page-container";
 
 export const dynamic = "force-dynamic";
 
-export default async function CatalogosPage() {
-  const [categorias, items, emisores, proveedores] = await Promise.all([
-    listarCategorias(),
-    listarItemsCatalogo(),
-    listarEmisores(),
-    listarProveedoresCfe(),
-  ]);
+export default async function CatalogosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [clave: string]: string | string[] | undefined }>;
+}) {
+  const [categorias, items, emisores, proveedores, compras, descartados, params] =
+    await Promise.all([
+      listarCategorias(),
+      listarItemsCatalogo(),
+      listarEmisores(),
+      listarProveedoresCfe(),
+      contarComprasPorItem(),
+      listarItemsSimilaresDescartados(),
+      searchParams,
+    ]);
 
   return (
     <PageContainer>
@@ -31,6 +41,9 @@ export default async function CatalogosPage() {
         itemsIniciales={items}
         emisoresIniciales={emisores.filter((e) => !e.esGenerico)}
         proveedoresIniciales={proveedores}
+        comprasPorItemIniciales={compras}
+        similaresDescartados={descartados}
+        abrirSimilares={params.similares !== undefined}
       />
     </PageContainer>
   );

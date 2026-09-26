@@ -7,13 +7,20 @@ import {
   proveedoresCfe,
   itemsCatalogo,
   itemsAliasTicket,
+  itemsSimilaresDescartados,
   gastos,
   gastoItems,
   gastosFijos,
 } from "@/db/schema";
-import { and, asc, eq, like, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import type { FormatoProveedorCfe } from "@/lib/procesadores";
+import {
+  agruparItemsSimilares,
+  claveItemExacta,
+  clavePar,
+  paresDe,
+} from "@/lib/duplicados";
 
 function revalidarCatalogos() {
   revalidatePath("/gastos/nuevo");
@@ -280,6 +287,38 @@ export async function borrarAliasTicket(
     );
 }
 
+/**
+ * Rechaza un ítem igual a otro ya existente (mismo nombre, marca y tamaño,
+ * según `claveItemExacta`). Compara en JS y no con `lower()` de SQLite porque
+ * ése sólo entiende ASCII: la migración 0010 dejó nombres como "TRIGUEñA", y
+ * además hay que ignorar tildes y leer el tamaño por su presentación.
+ * @param excluirIds ítems que no cuentan como choque (el que se edita, o los
+ * que se están combinando).
+ */
+async function verificarItemNoRepetido(
+  datos: { nombre: string; marca: string | null; tamano: string | null },
+  excluirIds: number[]
+) {
+  const clave = claveItemExacta(datos);
+  const existentes = await db
+    .select({
+      id: itemsCatalogo.id,
+      nombre: itemsCatalogo.nombre,
+      marca: itemsCatalogo.marca,
+      tamano: itemsCatalogo.tamano,
+    })
+    .from(itemsCatalogo);
+  const repetido = existentes.find(
+    (i) => !excluirIds.includes(i.id) && claveItemExacta(i) === clave
+  );
+  if (repetido) {
+    const detalle = [repetido.marca, repetido.tamano].filter(Boolean).join(" · ");
+    throw new Error(
+      `Ya existe el ítem "${repetido.nombre}"${detalle ? ` (${detalle})` : ""}`
+    );
+  }
+}
+
 export async function crearItemCatalogo(datos: {
   nombre: string;
   marca?: string;
@@ -289,13 +328,16 @@ export async function crearItemCatalogo(datos: {
 }) {
   const nombreLimpio = datos.nombre.trim().toUpperCase();
   if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
+  const marca = datos.marca?.trim().toUpperCase() || null;
+  const tamano = datos.tamano?.trim().toUpperCase() || null;
+  await verificarItemNoRepetido({ nombre: nombreLimpio, marca, tamano }, []);
 
   const [item] = await db
     .insert(itemsCatalogo)
     .values({
       nombre: nombreLimpio,
-      marca: datos.marca?.trim().toUpperCase() || null,
-      tamano: datos.tamano?.trim().toUpperCase() || null,
+      marca,
+      tamano,
       descripcion: datos.descripcion?.trim() || null,
       categoriaId: datos.categoriaId,
     })
@@ -317,6 +359,9 @@ export async function editarItemCatalogo(
 ) {
   const nombreLimpio = datos.nombre.trim().toUpperCase();
   if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
+  const marca = datos.marca?.trim().toUpperCase() || null;
+  const tamano = datos.tamano?.trim().toUpperCase() || null;
+  await verificarItemNoRepetido({ nombre: nombreLimpio, marca, tamano }, [id]);
 
   const [itemActual] = await db
     .select({ categoriaId: itemsCatalogo.categoriaId })
@@ -329,8 +374,8 @@ export async function editarItemCatalogo(
       .update(itemsCatalogo)
       .set({
         nombre: nombreLimpio,
-        marca: datos.marca?.trim().toUpperCase() || null,
-        tamano: datos.tamano?.trim().toUpperCase() || null,
+        marca,
+        tamano,
         descripcion: datos.descripcion?.trim() || null,
         categoriaId: datos.categoriaId,
       })
@@ -369,6 +414,215 @@ export async function borrarItemCatalogo(id: number) {
 
   await db.delete(itemsCatalogo).where(eq(itemsCatalogo.id, id));
   revalidarCatalogos();
+}
+
+/**
+ * @returns cuántas líneas de gasto usa cada ítem del catálogo, para decidir
+ * cuál conservar al combinar (el más usado suele ser el bueno).
+ */
+export async function contarComprasPorItem(): Promise<Record<number, number>> {
+  const filas = await db
+    .select({ itemCatalogoId: gastoItems.itemCatalogoId, compras: count() })
+    .from(gastoItems)
+    .where(sql`${gastoItems.itemCatalogoId} is not null`)
+    .groupBy(gastoItems.itemCatalogoId);
+  return Object.fromEntries(filas.map((f) => [f.itemCatalogoId!, f.compras]));
+}
+
+/**
+ * @returns las claves (`clavePar`) de los pares de ítems que el usuario ya
+ * marcó como productos distintos.
+ */
+export async function listarItemsSimilaresDescartados() {
+  const filas = await db
+    .select({
+      menor: itemsSimilaresDescartados.itemMenorId,
+      mayor: itemsSimilaresDescartados.itemMayorId,
+    })
+    .from(itemsSimilaresDescartados);
+  return filas.map((f) => clavePar(f.menor, f.mayor));
+}
+
+/**
+ * @returns cuántos grupos de ítems parecidos quedan sin revisar, para el
+ * aviso del inicio.
+ */
+export async function contarGruposItemsSimilares() {
+  const [items, descartados] = await Promise.all([
+    db
+      .select({
+        id: itemsCatalogo.id,
+        nombre: itemsCatalogo.nombre,
+        marca: itemsCatalogo.marca,
+        tamano: itemsCatalogo.tamano,
+      })
+      .from(itemsCatalogo),
+    listarItemsSimilaresDescartados(),
+  ]);
+  return agruparItemsSimilares(items, new Set(descartados)).length;
+}
+
+/**
+ * Registra que los ítems elegidos no son el mismo producto, para que dejen de
+ * aparecer como similares entre sí. Se guarda por par: marcar A, B y C
+ * descarta A-B, A-C y B-C, pero ninguno de ellos contra un cuarto ítem.
+ */
+export async function descartarItemsSimilares(ids: number[]) {
+  const pares = paresDe(ids);
+  if (pares.length === 0) {
+    throw new Error("Elegí al menos dos ítems");
+  }
+  await db
+    .insert(itemsSimilaresDescartados)
+    .values(pares.map(([itemMenorId, itemMayorId]) => ({ itemMenorId, itemMayorId })))
+    .onConflictDoNothing();
+  revalidarCatalogos();
+}
+
+/**
+ * Combina ítems del catálogo cargados por duplicado en uno solo. Todo lo que
+ * apuntaba a los absorbidos pasa al conservado y los absorbidos se borran de
+ * verdad (no hay borrado lógico):
+ * - las líneas de gasto cambian de ítem; las que seguían la categoría por
+ *   defecto del absorbido pasan a la del conservado, igual que al editar la
+ *   categoría de un ítem, y las que tenían una categoría propia la mantienen;
+ * - los alias de ticket se mudan, y cada nombre que deja de existir (el de los
+ *   absorbidos, y el del conservado si se renombró) queda como alias: es el
+ *   texto con el que los tickets venían reconociendo esa línea, y sin él el
+ *   próximo escaneo del mismo comercio ya no encontraría el ítem;
+ * - los pares descartados como "no son el mismo" contra un absorbido se
+ *   heredan, para no volver a ofrecer una combinación ya rechazada.
+ * Los sobreprecios ya marcados no se recalculan: juntar historiales sólo
+ * puede bajar el precio de referencia, así que ninguna marca existente deja
+ * de ser válida, y marcar nuevas pisaría decisiones manuales.
+ * @returns el ítem conservado con los datos elegidos, y los pares
+ * descartados ya con los heredados.
+ */
+export async function combinarItemsCatalogo(datos: {
+  conservarId: number;
+  absorberIds: number[];
+  nombre: string;
+  marca?: string;
+  tamano?: string;
+}) {
+  const nombreLimpio = datos.nombre.trim().toUpperCase();
+  if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
+  const absorberIds = [...new Set(datos.absorberIds)].filter(
+    (id) => id !== datos.conservarId
+  );
+  if (absorberIds.length === 0) {
+    throw new Error("Elegí al menos otro ítem para combinar");
+  }
+  const todosIds = [datos.conservarId, ...absorberIds];
+  const marca = datos.marca?.trim().toUpperCase() || null;
+  const tamano = datos.tamano?.trim().toUpperCase() || null;
+  await verificarItemNoRepetido({ nombre: nombreLimpio, marca, tamano }, todosIds);
+
+  const item = db.transaction((tx) => {
+    const originales = tx
+      .select()
+      .from(itemsCatalogo)
+      .where(inArray(itemsCatalogo.id, todosIds))
+      .all();
+    if (originales.length !== todosIds.length) {
+      throw new Error("Alguno de los ítems ya no existe");
+    }
+    const conservado = originales.find((i) => i.id === datos.conservarId)!;
+    const absorbidos = originales.filter((i) => i.id !== datos.conservarId);
+
+    const [actualizado] = tx
+      .update(itemsCatalogo)
+      .set({
+        nombre: nombreLimpio,
+        marca,
+        tamano,
+        descripcion:
+          conservado.descripcion ??
+          absorbidos.find((i) => i.descripcion)?.descripcion ??
+          null,
+      })
+      .where(eq(itemsCatalogo.id, conservado.id))
+      .returning()
+      .all();
+
+    for (const absorbido of absorbidos) {
+      if (absorbido.categoriaId === conservado.categoriaId) continue;
+      tx.update(gastoItems)
+        .set({ categoriaId: conservado.categoriaId })
+        .where(
+          and(
+            eq(gastoItems.itemCatalogoId, absorbido.id),
+            eq(gastoItems.categoriaId, absorbido.categoriaId)
+          )
+        )
+        .run();
+    }
+    tx.update(gastoItems)
+      .set({ itemCatalogoId: conservado.id })
+      .where(inArray(gastoItems.itemCatalogoId, absorberIds))
+      .run();
+
+    const aliasHeredados = tx
+      .select({ texto: itemsAliasTicket.texto })
+      .from(itemsAliasTicket)
+      .where(inArray(itemsAliasTicket.itemCatalogoId, absorberIds))
+      .all()
+      .map((a) => a.texto);
+    const textos = new Set(
+      [...aliasHeredados, ...originales.map((i) => i.nombre)].filter(
+        (t) => t.toLowerCase() !== nombreLimpio.toLowerCase()
+      )
+    );
+    if (textos.size > 0) {
+      tx.insert(itemsAliasTicket)
+        .values([...textos].map((texto) => ({ itemCatalogoId: conservado.id, texto })))
+        .onConflictDoNothing()
+        .run();
+    }
+
+    const heredados = tx
+      .select({
+        menor: itemsSimilaresDescartados.itemMenorId,
+        mayor: itemsSimilaresDescartados.itemMayorId,
+      })
+      .from(itemsSimilaresDescartados)
+      .where(
+        or(
+          inArray(itemsSimilaresDescartados.itemMenorId, absorberIds),
+          inArray(itemsSimilaresDescartados.itemMayorId, absorberIds)
+        )
+      )
+      .all()
+      .map((d) => (absorberIds.includes(d.menor) ? d.mayor : d.menor))
+      .filter((otro) => !todosIds.includes(otro))
+      .map((otro) => ({
+        itemMenorId: Math.min(conservado.id, otro),
+        itemMayorId: Math.max(conservado.id, otro),
+      }));
+    if (heredados.length > 0) {
+      tx.insert(itemsSimilaresDescartados)
+        .values(heredados)
+        .onConflictDoNothing()
+        .run();
+    }
+
+    tx.delete(itemsCatalogo).where(inArray(itemsCatalogo.id, absorberIds)).run();
+
+    return actualizado;
+  });
+
+  const [categoria] = await db
+    .select({ nombre: categorias.nombre })
+    .from(categorias)
+    .where(eq(categorias.id, item.categoriaId))
+    .limit(1);
+
+  revalidarCatalogos();
+  revalidatePath("/reportes");
+  return {
+    item: { ...item, categoriaNombre: categoria?.nombre ?? "" },
+    descartados: await listarItemsSimilaresDescartados(),
+  };
 }
 
 export async function buscarItemsCatalogo(query: string) {

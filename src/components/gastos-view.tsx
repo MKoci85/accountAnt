@@ -26,6 +26,8 @@ import {
 import { combinarGastos, type GastoResumen } from "@/app/actions/gastos";
 import { formatearMonto, formatearFechaCorta } from "@/lib/formato";
 import { GastoRow } from "@/components/gasto-row";
+import { GastosCombinablesDialog } from "@/components/gastos-combinables-dialog";
+import { agruparGastosCombinables } from "@/lib/duplicados";
 import {
   VerGastoAccion,
   EditarGastoAccion,
@@ -96,10 +98,12 @@ export function GastosView({
   gastos,
   categorias,
   emisores,
+  combinablesDescartados,
 }: {
   gastos: GastoResumen[];
   categorias: { id: number; nombre: string }[];
   emisores: { id: number; nombre: string }[];
+  combinablesDescartados: string[];
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -127,6 +131,16 @@ export function GastosView({
   const [seleccionados, setSeleccionados] = useState<number[]>([]);
   const [combinando, startCombinar] = useTransition();
   const [errorCombinar, setErrorCombinar] = useState<string | null>(null);
+  const [combinablesOpen, setCombinablesOpen] = useState(
+    () => params.get("combinables") !== null
+  );
+
+  const gruposCombinables = useMemo(() => {
+    const porId = new Map(gastos.map((g) => [g.id, g]));
+    return agruparGastosCombinables(gastos, new Set(combinablesDescartados)).map(
+      (ids) => ids.map((id) => porId.get(id)!)
+    );
+  }, [gastos, combinablesDescartados]);
 
   function activarModoCombinar() {
     setErrorCombinar(null);
@@ -383,6 +397,28 @@ export function GastosView({
           </div>
         )}
       </Card>
+
+      {gruposCombinables.length > 0 && !modoCombinar && (
+        <Card className="flex-row flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm">
+            <Combine className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span>
+              {gruposCombinables.length === 1
+                ? "Hay 1 grupo de gastos del mismo comercio y fecha que se podría combinar."
+                : `Hay ${gruposCombinables.length} grupos de gastos del mismo comercio y fecha que se podrían combinar.`}
+            </span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setCombinablesOpen(true)}>
+            Revisar
+          </Button>
+        </Card>
+      )}
+
+      <GastosCombinablesDialog
+        open={combinablesOpen}
+        onOpenChange={setCombinablesOpen}
+        grupos={gruposCombinables}
+      />
 
       {modoCombinar && (
         <Card className="flex-row flex-wrap items-center justify-between gap-3 px-4 py-3">

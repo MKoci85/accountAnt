@@ -62,3 +62,22 @@ export const itemsAliasTicket = sqliteTable(
     uniqueIndex("items_alias_ticket_unico").on(table.itemCatalogoId, table.texto),
   ]
 );
+
+export const itemsSimilaresDescartados = sqliteTable(
+  "items_similares_descartados",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    itemMenorId: integer("item_menor_id")
+      .notNull()
+      .references(() => itemsCatalogo.id, { onDelete: "cascade" }),
+    itemMayorId: integer("item_mayor_id")
+      .notNull()
+      .references(() => itemsCatalogo.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("items_similares_descartados_unico").on(
+      table.itemMenorId,
+      table.itemMayorId
+    ),
+  ]
+);

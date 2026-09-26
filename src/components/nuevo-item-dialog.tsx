@@ -8,6 +8,7 @@ import {
 } from "@/components/dialog-formulario";
 import { useEnvioDialog } from "@/hooks/use-envio-dialog";
 import { crearItemCatalogo, editarItemCatalogo } from "@/app/actions/catalogos";
+import { describirPresentacion, parsearPresentacion } from "@/lib/duplicados";
 import type { categorias } from "@/db/schema";
 
 type Categoria = typeof categorias.$inferSelect;
@@ -70,6 +71,7 @@ export function NuevoItemDialog({
   onEditado?: (item: ItemCatalogoConCategoria) => void;
 }) {
   const modoEdicion = itemExistenteId != null;
+  const presentacion = parsearPresentacion(draft.tamano);
   const { error, setError, isPending, enviar } = useEnvioDialog(
     "No se pudo guardar el ítem"
   );
@@ -135,8 +137,15 @@ export function NuevoItemDialog({
             id="item-tamano"
             value={draft.tamano}
             onChange={(e) => onDraftChange({ ...draft, tamano: e.target.value })}
-            placeholder="Opcional, ej: 1.5L"
+            placeholder="Ej: 1.5L, 500g, x12, 6x330ml"
           />
+          {draft.tamano.trim() && (
+            <span className="text-[11px] text-muted-foreground">
+              {presentacion
+                ? describirPresentacion(presentacion)
+                : "No se reconoce como peso, volumen ni unidades"}
+            </span>
+          )}
         </CampoFormulario>
       </div>
 

@@ -62,3 +62,22 @@ export const gastoItems = sqliteTable("gasto_items", {
     .default(false),
   esOferta: integer("es_oferta", { mode: "boolean" }).notNull().default(false),
 });
+
+export const gastosCombinablesDescartados = sqliteTable(
+  "gastos_combinables_descartados",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    gastoMenorId: integer("gasto_menor_id")
+      .notNull()
+      .references(() => gastos.id, { onDelete: "cascade" }),
+    gastoMayorId: integer("gasto_mayor_id")
+      .notNull()
+      .references(() => gastos.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("gastos_combinables_descartados_unico").on(
+      table.gastoMenorId,
+      table.gastoMayorId
+    ),
+  ]
+);

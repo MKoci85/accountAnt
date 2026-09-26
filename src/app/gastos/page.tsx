@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { listarGastos } from "@/app/actions/gastos";
+import {
+  listarGastos,
+  listarGastosCombinablesDescartados,
+} from "@/app/actions/gastos";
 import { listarCategorias, listarEmisores } from "@/app/actions/catalogos";
 import { GastosView } from "@/components/gastos-view";
 import { PageContainer } from "@/components/page-container";
@@ -8,10 +11,11 @@ import { PageContainer } from "@/components/page-container";
 export const dynamic = "force-dynamic";
 
 export default async function GastosPage() {
-  const [gastos, categorias, emisores] = await Promise.all([
+  const [gastos, categorias, emisores, combinablesDescartados] = await Promise.all([
     listarGastos(),
     listarCategorias(),
     listarEmisores(),
+    listarGastosCombinablesDescartados(),
   ]);
 
   return (
@@ -35,6 +39,7 @@ export default async function GastosPage() {
         gastos={gastos}
         categorias={categorias}
         emisores={emisores.filter((e) => !e.esGenerico)}
+        combinablesDescartados={combinablesDescartados}
       />
     </PageContainer>
   );
