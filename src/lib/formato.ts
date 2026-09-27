@@ -72,3 +72,13 @@ export function aISO(fecha: Date) {
 export function hoyISO() {
   return aISO(new Date());
 }
+
+/**
+ * @returns el período del primer día del mes hasta hoy, en fechas ISO.
+ */
+export function mesEnCurso(hoy: Date = new Date()) {
+  return {
+    desde: aISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
+    hasta: aISO(hoy),
+  };
+}

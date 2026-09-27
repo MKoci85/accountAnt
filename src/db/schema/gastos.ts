@@ -4,6 +4,7 @@ import {
   integer,
   real,
   uniqueIndex,
+  type AnySQLiteColumn,
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { emisores, categorias, itemsCatalogo } from "./catalogos";
@@ -61,6 +62,10 @@ export const gastoItems = sqliteTable("gasto_items", {
     .notNull()
     .default(false),
   esOferta: integer("es_oferta", { mode: "boolean" }).notNull().default(false),
+  sobreprecioLimpiadoPor: integer("sobreprecio_limpiado_por").references(
+    (): AnySQLiteColumn => gastoItems.id,
+    { onDelete: "set null" }
+  ),
 });
 
 export const gastosCombinablesDescartados = sqliteTable(

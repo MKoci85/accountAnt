@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { AlertTriangle, Camera, ImageUp, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -10,6 +10,7 @@ import type { ProveedorIA } from "@/lib/proveedores-ia";
 import { EsperandoIA, BloqueoIA } from "@/components/esperando-ia";
 import { capturarVideo, prepararImagen, type ImagenParaIA } from "@/lib/subidas";
 import { VistaCamara } from "@/components/vista-camara";
+import { useCamara } from "@/hooks/use-camara";
 
 export function LectorTicketIA({
   proveedoresIA,
@@ -30,53 +31,7 @@ export function LectorTicketIA({
       : (proveedoresIA[0]?.id ?? proveedorActivoIA),
   );
 
-  const [camaraActiva, setCamaraActiva] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
-  function detenerCamara() {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setCamaraActiva(false);
-  }
-
-  useEffect(() => {
-    if (!camaraActiva) return;
-
-    let cancelado = false;
-
-    navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      })
-      .then((stream) => {
-        if (cancelado) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        video.play();
-      })
-      .catch((e) => {
-        if (cancelado) return;
-        setError(
-          e instanceof Error ? e.message : "No se pudo acceder a la cámara",
-        );
-        setCamaraActiva(false);
-      });
-
-    return () => {
-      cancelado = true;
-      detenerCamara();
-    };
-  }, [camaraActiva]);
+  const camara = useCamara();
 
   async function analizar(obtenerImagen: () => Promise<ImagenParaIA>) {
     setError(null);
@@ -112,10 +67,10 @@ export function LectorTicketIA({
   }
 
   function handleCapturar() {
-    const video = videoRef.current;
+    const video = camara.videoRef.current;
     if (!video || video.readyState < video.HAVE_CURRENT_DATA) return;
     const imagen = capturarVideo(video);
-    detenerCamara();
+    camara.apagar();
     analizar(async () => imagen);
   }
 
@@ -176,11 +131,11 @@ export function LectorTicketIA({
             <EsperandoIA texto="Leyendo..." />
           </div>
         </div>
-      ) : camaraActiva ? (
+      ) : camara.activa ? (
         <VistaCamara
-          videoRef={videoRef}
+          videoRef={camara.videoRef}
           indicacion="Encuadrá el ticket entero, derecho y sin sombras"
-          onCerrar={detenerCamara}
+          onCerrar={camara.apagar}
           accion={{ etiqueta: "Sacar la foto", onClick: handleCapturar }}
         />
       ) : (
@@ -189,7 +144,7 @@ export function LectorTicketIA({
             type="button"
             onClick={() => {
               setError(null);
-              setCamaraActiva(true);
+              camara.encender();
             }}
             className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-muted/40 px-3 py-6 text-center hover:bg-muted/60"
           >
@@ -226,7 +181,11 @@ export function LectorTicketIA({
         </p>
       </div>
 
-      {error && <p className="mt-2.5 text-xs text-destructive">{error}</p>}
+      {(error ?? camara.error) && (
+        <p className="mt-2.5 text-xs text-destructive">
+          {error ?? camara.error}
+        </p>
+      )}
       {resumen && <p className="mt-2.5 text-xs text-primary">{resumen}</p>}
     </Card>
   );

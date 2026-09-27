@@ -49,7 +49,7 @@ import {
 import { DialogoAnalizarIA } from "@/components/dialogo-analizar-ia";
 import type { ProveedorDisponibleIA } from "@/app/actions/configuracion";
 import type { ProveedorIA } from "@/lib/proveedores-ia";
-import { aISO, formatearMonto, hoyISO } from "@/lib/formato";
+import { aISO, formatearMonto, hoyISO, mesEnCurso } from "@/lib/formato";
 import type { categorias as categoriasSchema, emisores as emisoresSchema } from "@/db/schema";
 
 type Categoria = typeof categoriasSchema.$inferSelect;
@@ -72,7 +72,7 @@ function resolverRango(rango: RangoKey): { desde: string; hasta: string } {
 
   switch (rango) {
     case "mes":
-      return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), hasta };
+      return mesEnCurso(hoy);
     case "3m":
       return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1)), hasta };
     case "6m":

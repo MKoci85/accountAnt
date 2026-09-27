@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import jsQR from "jsqr";
 import { ScanLine, CheckCircle2, AlertTriangle, Lock, Camera, ImageUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/procesadores";
 import { formatearMonto } from "@/lib/formato";
 import { VistaCamara } from "@/components/vista-camara";
+import { useCamara } from "@/hooks/use-camara";
 import type { categorias, emisores } from "@/db/schema";
 import type { ItemCatalogoConCategoria } from "@/components/nuevo-item-dialog";
 
@@ -72,97 +73,49 @@ export function EscanerComprobante({
     }
   }
 
-  const [camaraActiva, setCamaraActiva] = useState(false);
-  const [errorCamara, setErrorCamara] = useState<string | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const frameRef = useRef<number | null>(null);
+  const camara = useCamara((video) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    let frame: number | null = null;
+
+    const tick = () => {
+      if (canvas && ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "attemptBoth",
+        });
+        if (code?.data) {
+          frame = null;
+          camara.apagar();
+          consultar(code.data);
+          return;
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  });
 
   const [analizandoFoto, setAnalizandoFoto] = useState(false);
   const [errorFoto, setErrorFoto] = useState<string | null>(null);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
 
-  function detenerCamara() {
-    if (frameRef.current !== null) {
-      cancelAnimationFrame(frameRef.current);
-      frameRef.current = null;
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setCamaraActiva(false);
-  }
-
-  useEffect(() => {
-    if (!camaraActiva) return;
-
-    let cancelado = false;
-
-    navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      })
-      .then((stream) => {
-        if (cancelado) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        const video = videoRef.current;
-        if (!video) return;
-        video.srcObject = stream;
-        video.play();
-
-        const canvas = canvasRef.current;
-        const ctx = canvas?.getContext("2d");
-
-        const tick = () => {
-          if (canvas && ctx && video.readyState === video.HAVE_ENOUGH_DATA) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(imageData.data, imageData.width, imageData.height, {
-              inversionAttempts: "attemptBoth",
-            });
-            if (code?.data) {
-              detenerCamara();
-              consultar(code.data);
-              return;
-            }
-          }
-          frameRef.current = requestAnimationFrame(tick);
-        };
-        frameRef.current = requestAnimationFrame(tick);
-      })
-      .catch((e) => {
-        if (cancelado) return;
-        setErrorCamara(
-          e instanceof Error ? e.message : "No se pudo acceder a la cámara"
-        );
-        setCamaraActiva(false);
-      });
-
-    return () => {
-      cancelado = true;
-      detenerCamara();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camaraActiva]);
-
   function aplicarResultado(resultado: ResultadoConsultaCFE) {
     setResultado(resultado);
-    const [dia, mes, anio] = resultado.datosQR.fecha.split("/");
     onResuelto({
       emisor: resultado.emisor,
       tipoCfe: resultado.datosQR.tipoCfe,
       serie: resultado.datosQR.serie,
       numero: resultado.datosQR.numero,
-      fecha: `${anio}-${mes}-${dia}`,
+      fecha: resultado.fechaISO,
       total: resultado.total,
       avisoMoneda: resultado.avisoMoneda,
       lineas: resultado.items.map((item) => ({
@@ -282,20 +235,17 @@ export function EscanerComprobante({
 
       {!resultado && (
         <div className="flex flex-col gap-2.5">
-          {camaraActiva ? (
+          {camara.activa ? (
             <VistaCamara
-              videoRef={videoRef}
+              videoRef={camara.videoRef}
               indicacion="Apuntá al QR del comprobante"
-              onCerrar={detenerCamara}
+              onCerrar={camara.apagar}
             />
           ) : (
             <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
-                onClick={() => {
-                  setErrorCamara(null);
-                  setCamaraActiva(true);
-                }}
+                onClick={camara.encender}
                 className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-muted/40 px-3 py-5 text-center hover:bg-muted/60"
               >
                 <Camera className="h-6 w-6 text-muted-foreground" />
@@ -324,8 +274,8 @@ export function EscanerComprobante({
             </div>
           )}
           <canvas ref={canvasRef} className="hidden" />
-          {errorCamara && (
-            <p className="text-xs text-destructive">{errorCamara}</p>
+          {camara.error && (
+            <p className="text-xs text-destructive">{camara.error}</p>
           )}
           {errorFoto && <p className="text-xs text-destructive">{errorFoto}</p>}
           {isPending && (

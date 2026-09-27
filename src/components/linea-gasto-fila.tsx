@@ -351,6 +351,7 @@ export function LineaGastoFila({
           </button>
         )}
         {!sinPeso &&
+          !linea.esOferta &&
           linea.item.nombre !== ITEM_PAGO_TARJETA &&
           linea.item.id > 0 && (() => {
             const caro = sobreprecioDeLinea(linea);
@@ -392,12 +393,7 @@ export function LineaGastoFila({
                   disabled={linea.bloqueada}
                   title="Una oferta o promoción no queda como precio de referencia: sin esto, las compras siguientes a precio normal se marcarían como sobreprecio"
                   onClick={() =>
-                    actualizarLinea(linea.key, {
-                      esOferta: !linea.esOferta,
-                      esSobreprecio: false,
-                      sobreprecioManual: true,
-                      esPrecioBase: false,
-                    })
+                    actualizarLinea(linea.key, { esOferta: !linea.esOferta })
                   }
                 >
                   <BadgeLinea
@@ -421,7 +417,9 @@ export function LineaGastoFila({
               </>
             );
           })()}
-        {!sinPeso && (sobreprecioDeLinea(linea) || linea.esPrecioBase) && (
+        {!sinPeso &&
+          !linea.esOferta &&
+          (sobreprecioDeLinea(linea) || linea.esPrecioBase) && (
           <button
             type="button"
             aria-pressed={linea.esPrecioBase}

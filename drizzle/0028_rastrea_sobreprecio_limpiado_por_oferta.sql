@@ -1,0 +1,1 @@
+ALTER TABLE `gasto_items` ADD `sobreprecio_limpiado_por` integer REFERENCES gasto_items(id) ON DELETE set null;

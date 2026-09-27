@@ -173,110 +173,111 @@ export async function leerProveedoresConKey(): Promise<Set<ProveedorIA>> {
   return conKey;
 }
 
-async function leerNumero(clave: string, porDefecto: number): Promise<number> {
+/**
+ * Ajustes escalares editables desde `/ajustes`. Agregar uno es agregar una
+ * fila: la lectura, la validación al guardar, la revalidación y la carga en
+ * `obtenerConfigAvanzada` salen de acá. El tipo del valor lo decide el de
+ * `porDefecto`, y `nombre` es el sujeto de los mensajes de validación.
+ */
+export const AJUSTES = {
+  margenSobreprecioPeso: {
+    clave: "precios_margen_sobreprecio_peso",
+    porDefecto: MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
+    nombre: "El margen de sobreprecio",
+    revalidar: ["/reportes", "/gastos"],
+  },
+  margenOferta: {
+    clave: "precios_margen_oferta",
+    porDefecto: MARGEN_OFERTA_DEFAULT,
+    nombre: "El margen de oferta",
+    revalidar: ["/gastos"],
+  },
+  ventanaMesesReferencia: {
+    clave: "precios_ventana_meses_referencia",
+    porDefecto: MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
+    nombre: "La ventana de meses",
+    revalidar: ["/reportes", "/gastos"],
+  },
+  bcuDiasHaciaAtras: {
+    clave: "bcu_dias_hacia_atras",
+    porDefecto: 7,
+    nombre: "Los días hacia atrás",
+    revalidar: [],
+  },
+  bcuUrl: {
+    clave: "bcu_url_endpoint",
+    porDefecto:
+      "https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones",
+    nombre: "La URL del BCU",
+    revalidar: [],
+  },
+  bcuTimeoutMs: {
+    clave: "bcu_timeout_ms",
+    porDefecto: 15000,
+    nombre: "El timeout del BCU",
+    revalidar: [],
+  },
+  dgiUrl: {
+    clave: "dgi_url_consulta",
+    porDefecto: "https://www.efactura.dgi.gub.uy/consultaQR/cfe",
+    nombre: "La URL de DGI",
+    revalidar: [],
+  },
+  iaTimeoutMs: {
+    clave: "ia_timeout_ms",
+    porDefecto: 120000,
+    nombre: "El timeout de IA",
+    revalidar: ["/estado-cuenta"],
+  },
+  iaTimeoutChatMs: {
+    clave: "ia_timeout_chat_ms",
+    porDefecto: 45000,
+    nombre: "El timeout del chat",
+    revalidar: [],
+  },
+  openRouterReferer: {
+    clave: "ia_openrouter_http_referer",
+    porDefecto: "http://localhost:3000",
+    nombre: "El HTTP-Referer",
+    revalidar: ["/estado-cuenta"],
+  },
+} as const satisfies Record<
+  string,
+  {
+    clave: string;
+    porDefecto: number | string;
+    nombre: string;
+    revalidar: readonly string[];
+  }
+>;
+
+export type Ajuste = keyof typeof AJUSTES;
+
+export type ValorAjuste<K extends Ajuste> =
+  (typeof AJUSTES)[K]["porDefecto"] extends number ? number : string;
+
+export function esAjuste(valor: string): valor is Ajuste {
+  return Object.hasOwn(AJUSTES, valor);
+}
+
+/**
+ * @returns el valor guardado del ajuste, o su default si no hay ninguno o el
+ * guardado no es válido (un número tiene que ser positivo).
+ */
+export async function leerAjuste<K extends Ajuste>(
+  ajuste: K,
+): Promise<ValorAjuste<K>> {
+  const { clave, porDefecto } = AJUSTES[ajuste];
   const valor = await leerConfig(clave);
+  if (typeof porDefecto === "string") {
+    return (valor ?? porDefecto) as ValorAjuste<K>;
+  }
   const n = valor ? Number(valor) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : porDefecto;
+  return (Number.isFinite(n) && n > 0 ? n : porDefecto) as ValorAjuste<K>;
 }
 
-export const CLAVE_MARGEN_SOBREPRECIO = "precios_margen_sobreprecio_peso";
-export const CLAVE_MARGEN_OFERTA = "precios_margen_oferta";
-export const CLAVE_VENTANA_MESES = "precios_ventana_meses_referencia";
-export const CLAVE_BCU_DIAS = "bcu_dias_hacia_atras";
-export const CLAVE_BCU_URL = "bcu_url_endpoint";
-export const CLAVE_BCU_TIMEOUT = "bcu_timeout_ms";
-export const CLAVE_DGI_URL = "dgi_url_consulta";
-export const CLAVE_IA_TIMEOUT = "ia_timeout_ms";
-export const CLAVE_IA_TIMEOUT_CHAT = "ia_timeout_chat_ms";
-export const CLAVE_OPENROUTER_REFERER = "ia_openrouter_http_referer";
-
-export const BCU_DIAS_HACIA_ATRAS_DEFAULT = 7;
-export const BCU_URL_DEFAULT =
-  "https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones";
-export const BCU_TIMEOUT_MS_DEFAULT = 15000;
-export const DGI_URL_DEFAULT = "https://www.efactura.dgi.gub.uy/consultaQR/cfe";
-export const IA_TIMEOUT_MS_DEFAULT = 120000;
-export const IA_TIMEOUT_CHAT_MS_DEFAULT = 45000;
-export const OPENROUTER_REFERER_DEFAULT = "http://localhost:3000";
-
-export async function leerMargenSobreprecioPeso(): Promise<number> {
-  return leerNumero(CLAVE_MARGEN_SOBREPRECIO, MARGEN_SOBREPRECIO_POR_PESO_DEFAULT);
-}
-
-export async function escribirMargenSobreprecioPeso(valor: number) {
-  await escribirConfig(CLAVE_MARGEN_SOBREPRECIO, String(valor));
-}
-
-export async function leerMargenOferta(): Promise<number> {
-  return leerNumero(CLAVE_MARGEN_OFERTA, MARGEN_OFERTA_DEFAULT);
-}
-
-export async function escribirMargenOferta(valor: number) {
-  await escribirConfig(CLAVE_MARGEN_OFERTA, String(valor));
-}
-
-export async function leerVentanaMesesReferencia(): Promise<number> {
-  return leerNumero(CLAVE_VENTANA_MESES, MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT);
-}
-
-export async function escribirVentanaMesesReferencia(valor: number) {
-  await escribirConfig(CLAVE_VENTANA_MESES, String(valor));
-}
-
-export async function leerDiasHaciaAtrasBcu(): Promise<number> {
-  return leerNumero(CLAVE_BCU_DIAS, BCU_DIAS_HACIA_ATRAS_DEFAULT);
-}
-
-export async function escribirDiasHaciaAtrasBcu(valor: number) {
-  await escribirConfig(CLAVE_BCU_DIAS, String(valor));
-}
-
-export async function leerUrlBcu(): Promise<string> {
-  return (await leerConfig(CLAVE_BCU_URL)) ?? BCU_URL_DEFAULT;
-}
-
-export async function escribirUrlBcu(url: string) {
-  await escribirConfig(CLAVE_BCU_URL, url);
-}
-
-export async function leerTimeoutBcuMs(): Promise<number> {
-  return leerNumero(CLAVE_BCU_TIMEOUT, BCU_TIMEOUT_MS_DEFAULT);
-}
-
-export async function escribirTimeoutBcuMs(ms: number) {
-  await escribirConfig(CLAVE_BCU_TIMEOUT, String(ms));
-}
-
-export async function leerUrlDgi(): Promise<string> {
-  return (await leerConfig(CLAVE_DGI_URL)) ?? DGI_URL_DEFAULT;
-}
-
-export async function escribirUrlDgi(url: string) {
-  await escribirConfig(CLAVE_DGI_URL, url);
-}
-
-export async function leerTimeoutIaMs(): Promise<number> {
-  return leerNumero(CLAVE_IA_TIMEOUT, IA_TIMEOUT_MS_DEFAULT);
-}
-
-export async function escribirTimeoutIaMs(ms: number) {
-  await escribirConfig(CLAVE_IA_TIMEOUT, String(ms));
-}
-
-export async function leerTimeoutIaChatMs(): Promise<number> {
-  return leerNumero(CLAVE_IA_TIMEOUT_CHAT, IA_TIMEOUT_CHAT_MS_DEFAULT);
-}
-
-export async function escribirTimeoutIaChatMs(ms: number) {
-  await escribirConfig(CLAVE_IA_TIMEOUT_CHAT, String(ms));
-}
-
-export async function leerOpenRouterReferer(): Promise<string> {
-  return (await leerConfig(CLAVE_OPENROUTER_REFERER)) ?? OPENROUTER_REFERER_DEFAULT;
-}
-
-export async function escribirOpenRouterReferer(valor: string) {
-  await escribirConfig(CLAVE_OPENROUTER_REFERER, valor);
+export async function escribirAjuste(ajuste: Ajuste, valor: number | string) {
+  await escribirConfig(AJUSTES[ajuste].clave, String(valor));
 }
 
 const PREFIJO_URL = "ia_url_";

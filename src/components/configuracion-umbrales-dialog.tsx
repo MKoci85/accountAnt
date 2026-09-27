@@ -4,13 +4,7 @@ import { useState, useTransition } from "react";
 import { SlidersHorizontal, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  guardarDiasHaciaAtrasBcu,
-  guardarMargenOferta,
-  guardarMargenSobreprecioPeso,
-  guardarVentanaMesesReferencia,
-  type ConfigAvanzada,
-} from "@/app/actions/configuracion";
+import { guardarAjuste, type ConfigAvanzada } from "@/app/actions/configuracion";
 import { SeccionColapsable } from "@/components/seccion-colapsable";
 
 type Mensaje = { ok: boolean; texto: string };
@@ -30,34 +24,34 @@ export function ConfiguracionUmbralesDialog({
         <CampoNumero
           etiqueta="Margen de sobreprecio por peso"
           sufijo="%"
-          valor={inicial.margenSobreprecioPeso * 100}
-          porDefecto={inicial.margenSobreprecioPesoPorDefecto * 100}
+          valor={inicial.margenSobreprecioPeso.valor * 100}
+          porDefecto={inicial.margenSobreprecioPeso.porDefecto * 100}
           ayuda="Tolerancia sobre el precio de referencia en las líneas por kg o L. El precio por kilo que sale de un ticket nunca da exacto: sin margen casi toda compra de verdura quedaría marcada como cara. No se aplica a las líneas por unidad."
-          onGuardar={(v) => guardarMargenSobreprecioPeso(v / 100)}
+          onGuardar={(v) => guardarAjuste("margenSobreprecioPeso", v / 100)}
         />
         <CampoNumero
           etiqueta="Margen para sugerir oferta"
           sufijo="%"
-          valor={inicial.margenOferta * 100}
-          porDefecto={inicial.margenOfertaPorDefecto * 100}
+          valor={inicial.margenOferta.valor * 100}
+          porDefecto={inicial.margenOferta.porDefecto * 100}
           ayuda="Cuánto tiene que estar por debajo del precio de referencia una línea para que el formulario ofrezca marcarla como oferta. Una oferta no se usa como referencia: si no se marca, el precio promocional pasa a ser el mínimo y todas las compras siguientes quedan como sobreprecio."
-          onGuardar={(v) => guardarMargenOferta(v / 100)}
+          onGuardar={(v) => guardarAjuste("margenOferta", v / 100)}
         />
         <CampoNumero
           etiqueta="Ventana de precio de referencia"
           sufijo="meses"
-          valor={inicial.ventanaMesesReferencia}
-          porDefecto={inicial.ventanaMesesReferenciaPorDefecto}
+          valor={inicial.ventanaMesesReferencia.valor}
+          porDefecto={inicial.ventanaMesesReferencia.porDefecto}
           ayuda="Cuánto hacia atrás se busca el precio más barato con el que se compara. Los precios suben: una ventana muy larga marca como sobreprecio compras normales de hoy."
-          onGuardar={guardarVentanaMesesReferencia}
+          onGuardar={(v) => guardarAjuste("ventanaMesesReferencia", v)}
         />
         <CampoNumero
           etiqueta="Días hacia atrás para la cotización del BCU"
           sufijo="días"
-          valor={inicial.bcuDiasHaciaAtras}
-          porDefecto={inicial.bcuDiasHaciaAtrasPorDefecto}
+          valor={inicial.bcuDiasHaciaAtras.valor}
+          porDefecto={inicial.bcuDiasHaciaAtras.porDefecto}
           ayuda="El BCU no cotiza fines de semana ni feriados. Si la fecha pedida no tiene cotización se mira hacia atrás hasta encontrar una; el default cubre un fin de semana largo."
-          onGuardar={guardarDiasHaciaAtrasBcu}
+          onGuardar={(v) => guardarAjuste("bcuDiasHaciaAtras", v)}
         />
       </div>
     </SeccionColapsable>

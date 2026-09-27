@@ -13,20 +13,22 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "dri
 import { revalidatePath } from "next/cache";
 import { redirect, notFound } from "next/navigation";
 import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
-import { aISO } from "@/lib/formato";
-import { agruparGastosCombinables, clavePar, paresDe } from "@/lib/duplicados";
+import { aISO, mesEnCurso } from "@/lib/formato";
+import {
+  agruparGastosCombinables,
+  clavePar,
+  paresDe,
+  paresHeredados,
+} from "@/lib/duplicados";
 import {
   fechaLimiteVentanaPrecio,
   normalizarUnidad,
   superaReferencia,
   claveReferencia,
+  referenciasDePrecio,
   type UnidadMedida,
 } from "@/lib/precios-referencia";
-import {
-  leerMargenOferta,
-  leerMargenSobreprecioPeso,
-  leerVentanaMesesReferencia,
-} from "@/lib/config-server";
+import { leerAjuste } from "@/lib/config-server";
 
 export type NuevoGastoItem = {
   itemCatalogoId?: number | null;
@@ -43,65 +45,48 @@ export type NuevoGastoItem = {
   esOferta?: boolean;
 };
 
-async function obtenerPreciosMinimos(
+const columnasReferencia = {
+  gastoItemId: gastoItems.id,
+  itemCatalogoId: gastoItems.itemCatalogoId,
+  unidad: gastoItems.unidad,
+  precio: gastoItems.precio,
+  fecha: gastos.fecha,
+  esPrecioBase: gastoItems.esPrecioBase,
+  esOferta: gastoItems.esOferta,
+  esPesoDesconocido: gastoItems.esPesoDesconocido,
+};
+
+async function obtenerPreciosReferencia(
   itemCatalogoIds: number[],
   fechaGasto: string,
   excluirGastoId?: number
 ) {
   if (!itemCatalogoIds.length) return new Map<string, number>();
 
+  const fechaLimite = fechaLimiteVentanaPrecio(
+    fechaGasto,
+    await leerAjuste("ventanaMesesReferencia")
+  );
   const condiciones = [
     inArray(gastoItems.itemCatalogoId, itemCatalogoIds),
-    gte(
-      gastos.fecha,
-      fechaLimiteVentanaPrecio(fechaGasto, await leerVentanaMesesReferencia())
-    ),
+    gte(gastos.fecha, fechaLimite),
   ];
   if (excluirGastoId) {
     condiciones.push(sql`${gastoItems.gastoId} != ${excluirGastoId}`);
   }
 
   const filas = await db
-    .select({
-      itemCatalogoId: gastoItems.itemCatalogoId,
-      precio: gastoItems.precio,
-      unidad: gastoItems.unidad,
-      esPrecioBase: gastoItems.esPrecioBase,
-      esPesoDesconocido: gastoItems.esPesoDesconocido,
-      esOferta: gastoItems.esOferta,
-      fecha: gastos.fecha,
-    })
+    .select(columnasReferencia)
     .from(gastoItems)
     .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
     .where(and(...condiciones));
 
-  const minimos = new Map<string, number>();
-  const basesPorItem = new Map<string, { precio: number; fecha: string }>();
-  for (const fila of filas) {
-    if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
-    if (fila.esOferta) continue;
-    if (fila.precio <= 0) continue;
-    const clave = claveReferencia(fila.itemCatalogoId, normalizarUnidad(fila.unidad));
-    const minimoActual = minimos.get(clave);
-    if (minimoActual === undefined || fila.precio < minimoActual) {
-      minimos.set(clave, fila.precio);
-    }
-    if (!fila.esPrecioBase) continue;
-    const baseActual = basesPorItem.get(clave);
-    if (!baseActual || fila.fecha > baseActual.fecha) {
-      basesPorItem.set(clave, { precio: fila.precio, fecha: fila.fecha });
-    }
-  }
-
-  for (const [clave, base] of basesPorItem) {
-    const minimoActual = minimos.get(clave);
-    minimos.set(
+  return new Map(
+    [...referenciasDePrecio(filas, fechaLimite)].map(([clave, compra]) => [
       clave,
-      minimoActual === undefined ? base.precio : Math.min(minimoActual, base.precio)
-    );
-  }
-
-  return minimos;
+      compra.precio,
+    ])
+  );
 }
 
 async function obtenerIdItemPagoTarjeta() {
@@ -124,12 +109,12 @@ async function conSobreprecioDetectado(
     .map((i) => i.itemCatalogoId)
     .filter((id): id is number => id != null && id !== idPagoTarjeta);
 
-  const preciosMinimos = await obtenerPreciosMinimos(
+  const preciosReferencia = await obtenerPreciosReferencia(
     idsComparables,
     fechaGasto,
     excluirGastoId
   );
-  const margen = await leerMargenSobreprecioPeso();
+  const margen = await leerAjuste("margenSobreprecioPeso");
 
   return items.map((item) => {
     if (item.esPesoDesconocido) return { ...item, esSobreprecio: false };
@@ -146,16 +131,33 @@ async function conSobreprecioDetectado(
       return { ...item, esSobreprecio: false };
     }
     const unidad = normalizarUnidad(item.unidad);
-    const minimo = preciosMinimos.get(
+    const referencia = preciosReferencia.get(
       claveReferencia(item.itemCatalogoId, unidad)
     );
     return {
       ...item,
       esSobreprecio:
-        minimo !== undefined &&
-        superaReferencia(item.precio, minimo, unidad, margen),
+        referencia !== undefined &&
+        superaReferencia(item.precio, referencia, unidad, margen),
     };
   });
+}
+
+function filasGastoItems(gastoId: number, items: NuevoGastoItem[]) {
+  return items.map((item) => ({
+    gastoId,
+    itemCatalogoId: item.itemCatalogoId ?? null,
+    descripcion: item.descripcion ?? null,
+    categoriaId: item.categoriaId,
+    cantidad: item.cantidad,
+    unidad: normalizarUnidad(item.unidad),
+    precio: item.precio,
+    esHormiga: item.esHormiga ?? false,
+    esSobreprecio: item.esSobreprecio ?? false,
+    esPrecioBase: item.esPrecioBase ?? false,
+    esOferta: item.esOferta ?? false,
+    esPesoDesconocido: item.esPesoDesconocido ?? false,
+  }));
 }
 
 export type NuevoGastoDatos = {
@@ -201,24 +203,7 @@ export async function guardarGasto(
         .returning()
         .get();
 
-      tx.insert(gastoItems)
-        .values(
-          items.map((item) => ({
-            gastoId: gasto.id,
-            itemCatalogoId: item.itemCatalogoId ?? null,
-            descripcion: item.descripcion ?? null,
-            categoriaId: item.categoriaId,
-            cantidad: item.cantidad,
-            unidad: normalizarUnidad(item.unidad),
-            precio: item.precio,
-            esHormiga: item.esHormiga ?? false,
-            esSobreprecio: item.esSobreprecio,
-            esPrecioBase: item.esPrecioBase ?? false,
-          esOferta: item.esOferta ?? false,
-            esPesoDesconocido: item.esPesoDesconocido ?? false,
-          }))
-        )
-        .run();
+      tx.insert(gastoItems).values(filasGastoItems(gasto.id, items)).run();
 
       return { id: gasto.id };
     });
@@ -261,24 +246,7 @@ export async function editarGasto(
 
     tx.delete(gastoItems).where(eq(gastoItems.gastoId, id)).run();
 
-    tx.insert(gastoItems)
-      .values(
-        items.map((item) => ({
-          gastoId: id,
-          itemCatalogoId: item.itemCatalogoId ?? null,
-          descripcion: item.descripcion ?? null,
-          categoriaId: item.categoriaId,
-          cantidad: item.cantidad,
-          unidad: normalizarUnidad(item.unidad),
-          precio: item.precio,
-          esHormiga: item.esHormiga ?? false,
-          esSobreprecio: item.esSobreprecio,
-          esPrecioBase: item.esPrecioBase ?? false,
-          esOferta: item.esOferta ?? false,
-          esPesoDesconocido: item.esPesoDesconocido ?? false,
-        }))
-      )
-      .run();
+    tx.insert(gastoItems).values(filasGastoItems(id, items)).run();
   });
 
   revalidatePath("/gastos");
@@ -346,25 +314,24 @@ export async function combinarGastos(idsGastos: number[]) {
       .where(inArray(gastoItems.gastoId, idsAEliminar))
       .run();
 
-    const descartesHeredados = tx
-      .select({
-        menor: gastosCombinablesDescartados.gastoMenorId,
-        mayor: gastosCombinablesDescartados.gastoMayorId,
-      })
-      .from(gastosCombinablesDescartados)
-      .where(
-        or(
-          inArray(gastosCombinablesDescartados.gastoMenorId, idsAEliminar),
-          inArray(gastosCombinablesDescartados.gastoMayorId, idsAEliminar)
+    const descartesHeredados = paresHeredados(
+      tx
+        .select({
+          menor: gastosCombinablesDescartados.gastoMenorId,
+          mayor: gastosCombinablesDescartados.gastoMayorId,
+        })
+        .from(gastosCombinablesDescartados)
+        .where(
+          or(
+            inArray(gastosCombinablesDescartados.gastoMenorId, idsAEliminar),
+            inArray(gastosCombinablesDescartados.gastoMayorId, idsAEliminar)
+          )
         )
-      )
-      .all()
-      .map((d) => (idsAEliminar.includes(d.menor) ? d.mayor : d.menor))
-      .filter((otro) => !idsUnicos.includes(otro))
-      .map((otro) => ({
-        gastoMenorId: Math.min(destino.id, otro),
-        gastoMayorId: Math.max(destino.id, otro),
-      }));
+        .all()
+        .map((d): [number, number] => [d.menor, d.mayor]),
+      idsAEliminar,
+      destino.id
+    ).map(([gastoMenorId, gastoMayorId]) => ({ gastoMenorId, gastoMayorId }));
     if (descartesHeredados.length > 0) {
       tx.insert(gastosCombinablesDescartados)
         .values(descartesHeredados)
@@ -584,7 +551,7 @@ export async function listarGastos() {
 
 export async function obtenerResumenDashboard() {
   const hoy = new Date();
-  const inicioMes = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}-01`;
+  const { desde: inicioMes } = mesEnCurso(hoy);
   const mesSiguiente = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
   const inicioMesSiguiente = aISO(mesSiguiente);
 
@@ -643,8 +610,8 @@ export type ReferenciasConMargen = {
 };
 
 /**
- * Referencias de precio (mínimo vigente por ítem+unidad) para precargar el
- * formulario de gasto, con el mismo criterio que usa el servidor al guardar.
+ * Referencias de precio vigentes por ítem+unidad para precargar el formulario
+ * de gasto, con el mismo criterio que usa el servidor al guardar.
  * @param itemCatalogoIds Ids de ítems de catálogo a resolver.
  * @param fechaGasto Fecha del gasto, para acotar la ventana de referencia.
  * @param excluirGastoId Gasto a excluir del cálculo (al editar uno existente).
@@ -660,10 +627,14 @@ export async function obtenerReferenciasDePrecio(
     (id) => Number.isInteger(id) && id > 0 && id !== idPagoTarjeta
   );
 
-  const minimos = await obtenerPreciosMinimos(ids, fechaGasto, excluirGastoId);
+  const preciosReferencia = await obtenerPreciosReferencia(
+    ids,
+    fechaGasto,
+    excluirGastoId
+  );
 
   return {
-    referencias: [...minimos].map(([clave, precio]) => {
+    referencias: [...preciosReferencia].map(([clave, precio]) => {
       const [id, unidad] = clave.split("|");
       return {
         itemCatalogoId: Number(id),
@@ -671,8 +642,8 @@ export async function obtenerReferenciasDePrecio(
         precio,
       };
     }),
-    margen: await leerMargenSobreprecioPeso(),
-    margenOferta: await leerMargenOferta(),
+    margen: await leerAjuste("margenSobreprecioPeso"),
+    margenOferta: await leerAjuste("margenOferta"),
   };
 }
 
@@ -702,8 +673,10 @@ export type HistorialPrecios = {
 /**
  * Historial de compras de un ítem del catálogo, para responder "¿cuánto pagué
  * antes y dónde?" sin salir del gasto que se está cargando. Marca cuál de las
- * filas es hoy el precio de referencia con el mismo criterio que usa
- * `obtenerPreciosMinimos`, que es lo que hace legible una marca de sobreprecio.
+ * filas es hoy el precio de referencia con `referenciasDePrecio`, el mismo
+ * criterio que usa la detección de sobreprecio, que es lo que hace legible
+ * una marca. La referencia se elige entre todas las compras de la ventana,
+ * no sólo entre las que se devuelven.
  * @param itemCatalogoId Ítem a consultar.
  * @param limite Cuántas compras devolver, de la más reciente hacia atrás.
  */
@@ -719,55 +692,40 @@ export async function obtenerHistorialPrecios(
 
   const filas = await db
     .select({
-      gastoItemId: gastoItems.id,
+      ...columnasReferencia,
       gastoId: gastoItems.gastoId,
-      fecha: gastos.fecha,
       emisorNombre: emisores.nombre,
       cantidad: gastoItems.cantidad,
-      unidad: gastoItems.unidad,
-      precio: gastoItems.precio,
-      esOferta: gastoItems.esOferta,
-      esPrecioBase: gastoItems.esPrecioBase,
-      esPesoDesconocido: gastoItems.esPesoDesconocido,
       esSobreprecio: gastoItems.esSobreprecio,
     })
     .from(gastoItems)
     .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
     .innerJoin(emisores, eq(emisores.id, gastos.emisorId))
     .where(eq(gastoItems.itemCatalogoId, itemCatalogoId))
-    .orderBy(desc(gastos.fecha), desc(gastoItems.id))
-    .limit(limite);
+    .orderBy(desc(gastos.fecha), desc(gastoItems.id));
 
   const fechaLimite = fechaLimiteVentanaPrecio(
     aISO(new Date()),
-    await leerVentanaMesesReferencia()
+    await leerAjuste("ventanaMesesReferencia")
   );
+  const referencias = new Set(referenciasDePrecio(filas, fechaLimite).values());
 
-  const compras = filas.map((f) => ({
-    ...f,
+  const compras = filas.slice(0, limite).map((f) => ({
+    gastoItemId: f.gastoItemId,
+    gastoId: f.gastoId,
+    fecha: f.fecha,
+    emisorNombre: f.emisorNombre,
+    cantidad: f.cantidad,
     unidad: normalizarUnidad(f.unidad),
+    precio: f.precio,
     total: Number((f.precio * f.cantidad).toFixed(2)),
-    esReferencia: false,
+    esOferta: f.esOferta,
+    esPrecioBase: f.esPrecioBase,
+    esPesoDesconocido: f.esPesoDesconocido,
+    esSobreprecio: f.esSobreprecio,
+    esReferencia: referencias.has(f),
     fueraDeVentana: f.fecha < fechaLimite,
   }));
-
-  for (const unidad of new Set(compras.map((c) => c.unidad))) {
-    const elegibles = compras.filter(
-      (c) =>
-        c.unidad === unidad &&
-        !c.fueraDeVentana &&
-        !c.esOferta &&
-        !c.esPesoDesconocido
-    );
-    const bases = elegibles.filter((c) => c.esPrecioBase);
-    const referencia = bases.length
-      ? bases[0]
-      : elegibles.reduce<(typeof elegibles)[number] | null>(
-          (mejor, c) => (mejor === null || c.precio < mejor.precio ? c : mejor),
-          null
-        );
-    if (referencia) referencia.esReferencia = true;
-  }
 
   return {
     itemNombre: item?.nombre ?? "Ítem",
@@ -777,20 +735,31 @@ export async function obtenerHistorialPrecios(
 }
 
 /**
- * Marca (o desmarca) una compra ya guardada como hecha en oferta, y limpia el
- * sobreprecio que ese precio hubiera provocado en las demás compras del ítem.
- * Existe porque el flag no se puede poner al cargar un gasto viejo: la línea
- * puede ser la única del ítem, y entonces el formulario no tiene contra qué
- * sugerirlo. Sólo *desmarca* sobreprecios que ya no superan la referencia —
- * nunca marca uno nuevo, para no pisar una decisión manual del usuario.
- * @returns Cuántas líneas dejaron de estar marcadas como sobreprecio.
+ * Marca (o desmarca) una compra ya guardada como hecha en oferta. Existe
+ * porque el flag no se puede poner al cargar un gasto viejo: la línea puede
+ * ser la única del ítem, y entonces el formulario no tiene contra qué
+ * sugerirlo.
+ *
+ * Marcarla limpia el sobreprecio que ese precio hubiera provocado en las demás
+ * compras del ítem, y cada línea limpiada guarda en `sobreprecioLimpiadoPor`
+ * qué oferta la limpió. Desmarcarla es la operación inversa: vuelve a marcar
+ * sólo esas líneas, y sólo si siguen superando la referencia. Nunca se marca
+ * un sobreprecio que no haya limpiado esta misma oferta, para no pisar una
+ * decisión manual del usuario. La marca de "subió de precio" no se toca:
+ * mientras la línea sea oferta queda inerte, y al desmarcarla vuelve.
+ * @returns Cuántas líneas dejaron de estar, o volvieron a estar, marcadas
+ * como sobreprecio.
  */
 export async function marcarCompraComoOferta(
   gastoItemId: number,
   esOferta: boolean
-): Promise<{ sobrepreciosLimpiados: number }> {
+): Promise<{ sobrepreciosLimpiados: number; sobrepreciosRestaurados: number }> {
   const [linea] = await db
-    .select({ itemCatalogoId: gastoItems.itemCatalogoId })
+    .select({
+      itemCatalogoId: gastoItems.itemCatalogoId,
+      esSobreprecio: gastoItems.esSobreprecio,
+      sobreprecioLimpiadoPor: gastoItems.sobreprecioLimpiadoPor,
+    })
     .from(gastoItems)
     .where(eq(gastoItems.id, gastoItemId))
     .limit(1);
@@ -798,36 +767,70 @@ export async function marcarCompraComoOferta(
     throw new Error("Esa línea no está vinculada a un ítem del catálogo");
   }
 
-  await db
-    .update(gastoItems)
-    .set({
-      esOferta,
-      ...(esOferta ? { esPrecioBase: false, esSobreprecio: false } : {}),
-    })
-    .where(eq(gastoItems.id, gastoItemId));
-
-  const sobrepreciosLimpiados = await recalcularSobreprecioDeItem(
-    linea.itemCatalogoId
-  );
+  let sobrepreciosLimpiados = 0;
+  let sobrepreciosRestaurados = 0;
+  if (esOferta) {
+    await db
+      .update(gastoItems)
+      .set({
+        esOferta: true,
+        esSobreprecio: false,
+        sobreprecioLimpiadoPor: linea.esSobreprecio
+          ? gastoItemId
+          : linea.sobreprecioLimpiadoPor,
+      })
+      .where(eq(gastoItems.id, gastoItemId));
+    sobrepreciosLimpiados = await limpiarSobreprecioDeItem(
+      linea.itemCatalogoId,
+      gastoItemId
+    );
+  } else {
+    await db
+      .update(gastoItems)
+      .set({ esOferta: false })
+      .where(eq(gastoItems.id, gastoItemId));
+    sobrepreciosRestaurados = await restaurarSobreprecioLimpiado(
+      linea.itemCatalogoId,
+      gastoItemId
+    );
+  }
 
   revalidatePath("/gastos");
   revalidatePath("/reportes");
   revalidatePath("/catalogos");
-  return { sobrepreciosLimpiados };
+  return { sobrepreciosLimpiados, sobrepreciosRestaurados };
 }
 
-async function recalcularSobreprecioDeItem(itemCatalogoId: number) {
-  const margen = await leerMargenSobreprecioPeso();
+const columnasRecalculo = {
+  id: gastoItems.id,
+  gastoId: gastoItems.gastoId,
+  fecha: gastos.fecha,
+  unidad: gastoItems.unidad,
+  precio: gastoItems.precio,
+  esOferta: gastoItems.esOferta,
+  esPrecioBase: gastoItems.esPrecioBase,
+  esPesoDesconocido: gastoItems.esPesoDesconocido,
+};
+
+async function superaReferenciaVigente(
+  itemCatalogoId: number,
+  fila: { gastoId: number; fecha: string; unidad: string; precio: number },
+  margen: number
+) {
+  const unidad = normalizarUnidad(fila.unidad);
+  const referencia = (
+    await obtenerPreciosReferencia([itemCatalogoId], fila.fecha, fila.gastoId)
+  ).get(claveReferencia(itemCatalogoId, unidad));
+  return (
+    referencia !== undefined &&
+    superaReferencia(fila.precio, referencia, unidad, margen)
+  );
+}
+
+async function limpiarSobreprecioDeItem(itemCatalogoId: number, ofertaId: number) {
+  const margen = await leerAjuste("margenSobreprecioPeso");
   const filas = await db
-    .select({
-      id: gastoItems.id,
-      gastoId: gastoItems.gastoId,
-      fecha: gastos.fecha,
-      unidad: gastoItems.unidad,
-      precio: gastoItems.precio,
-      esOferta: gastoItems.esOferta,
-      esPesoDesconocido: gastoItems.esPesoDesconocido,
-    })
+    .select(columnasRecalculo)
     .from(gastoItems)
     .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
     .where(
@@ -847,20 +850,43 @@ async function recalcularSobreprecioDeItem(itemCatalogoId: number) {
       limpiados += 1;
       continue;
     }
-    const unidad = normalizarUnidad(fila.unidad);
-    const minimos = await obtenerPreciosMinimos(
-      [itemCatalogoId],
-      fila.fecha,
-      fila.gastoId
-    );
-    const minimo = minimos.get(claveReferencia(itemCatalogoId, unidad));
-    if (minimo === undefined || !superaReferencia(fila.precio, minimo, unidad, margen)) {
+    if (!(await superaReferenciaVigente(itemCatalogoId, fila, margen))) {
       await db
         .update(gastoItems)
-        .set({ esSobreprecio: false })
+        .set({ esSobreprecio: false, sobreprecioLimpiadoPor: ofertaId })
         .where(eq(gastoItems.id, fila.id));
       limpiados += 1;
     }
   }
   return limpiados;
+}
+
+async function restaurarSobreprecioLimpiado(
+  itemCatalogoId: number,
+  ofertaId: number
+) {
+  const margen = await leerAjuste("margenSobreprecioPeso");
+  const filas = await db
+    .select(columnasRecalculo)
+    .from(gastoItems)
+    .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
+    .where(eq(gastoItems.sobreprecioLimpiadoPor, ofertaId));
+
+  let restaurados = 0;
+  for (const fila of filas) {
+    const vuelveASerSobreprecio =
+      !fila.esOferta &&
+      !fila.esPesoDesconocido &&
+      !fila.esPrecioBase &&
+      (await superaReferenciaVigente(itemCatalogoId, fila, margen));
+    await db
+      .update(gastoItems)
+      .set({
+        sobreprecioLimpiadoPor: null,
+        ...(vuelveASerSobreprecio ? { esSobreprecio: true } : {}),
+      })
+      .where(eq(gastoItems.id, fila.id));
+    if (vuelveASerSobreprecio) restaurados += 1;
+  }
+  return restaurados;
 }

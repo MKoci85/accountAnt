@@ -3,16 +3,13 @@ import { listarCategorias, listarEmisores } from "@/app/actions/catalogos";
 import { obtenerProveedoresDisponiblesIA } from "@/app/actions/configuracion";
 import { ReportesView } from "@/components/reportes-view";
 import { PageContainer } from "@/components/page-container";
-import { aISO } from "@/lib/formato";
+import { mesEnCurso } from "@/lib/formato";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReportesPage() {
-  const hoy = new Date();
-  const inicioMes = aISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
-
   const [reporteInicial, categorias, emisores, proveedores] = await Promise.all([
-    obtenerReporte({ desde: inicioMes, hasta: aISO(hoy) }),
+    obtenerReporte(mesEnCurso()),
     listarCategorias(),
     listarEmisores(),
     obtenerProveedoresDisponiblesIA(),

@@ -15,10 +15,10 @@ import {
   type FiltrosReporte,
 } from "@/app/actions/reportes";
 import {
+  leerAjuste,
   leerApiKeyIA,
   leerModeloIA,
   leerProveedorIA,
-  leerTimeoutIaChatMs,
   leerTpmEfectivo,
 } from "@/lib/config-server";
 import { llamar, type MensajeIA } from "@/lib/ia-cliente";
@@ -247,33 +247,6 @@ async function resolverProveedorYModelo(opciones?: {
   }
   const modelo = opciones?.modelo?.trim();
   return { proveedor, modelo: modelo || (await leerModeloIA(proveedor)) };
-}
-
-/**
- * Cuota del proveedor de una conversación, o del proveedor activo si no se
- * pasa `conversacionId` (para mostrarla antes de crear una conversación nueva).
- * @param conversacionId Conversación cuyo proveedor consultar.
- * @returns El estado de cuota de ese proveedor.
- */
-export async function estadoCuotaChat(
-  conversacionId?: number,
-): Promise<EstadoCuota> {
-  if (conversacionId !== undefined && Number.isInteger(conversacionId)) {
-    const [conv] = await db
-      .select({
-        proveedor: conversacionesIA.proveedor,
-        modelo: conversacionesIA.modelo,
-      })
-      .from(conversacionesIA)
-      .where(eq(conversacionesIA.id, conversacionId))
-      .limit(1);
-    if (conv && esProveedorValido(conv.proveedor)) {
-      return estadoCuota(conv.proveedor, conv.modelo, 0);
-    }
-  }
-
-  const proveedor = await leerProveedorIA();
-  return estadoCuota(proveedor, await leerModeloIA(proveedor), 0);
 }
 
 export async function renombrarConversacion(id: number, titulo: string) {
@@ -716,7 +689,7 @@ export async function enviarMensaje(
       systemPrompt: PROMPT_SISTEMA_CHAT,
       mensajes: marcarCorteDeCache(podado.mensajes),
       cachear: true,
-      timeoutMs: await leerTimeoutIaChatMs(),
+      timeoutMs: await leerAjuste("iaTimeoutChatMs"),
       reintentos: 1,
     },
     maxTokens,

@@ -1,4 +1,4 @@
-import { leerUrlDgi } from "@/lib/config-server";
+import { leerAjuste } from "@/lib/config-server";
 import type { FormatoProveedorCfe } from "@/lib/procesadores";
 import { extractText, getDocumentProxy } from "unpdf";
 
@@ -58,7 +58,7 @@ export async function validarConDgi(datos: DatosQR): Promise<ValidacionDgi> {
     datos.hash,
   ];
 
-  const url = `${await leerUrlDgi()}?${query
+  const url = `${await leerAjuste("dgiUrl")}?${query
     .map(encodeURIComponent)
     .join(",")}`;
 

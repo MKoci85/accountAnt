@@ -75,20 +75,24 @@ export function HistorialPreciosDialog({
     setAviso(null);
     startGuardado(async () => {
       try {
-        const { sobrepreciosLimpiados } = await marcarCompraComoOferta(
-          gastoItemId,
-          esOferta
-        );
+        const { sobrepreciosLimpiados, sobrepreciosRestaurados } =
+          await marcarCompraComoOferta(gastoItemId, esOferta);
         setCargado({
           itemCatalogoId,
           datos: await obtenerHistorialPrecios(itemCatalogoId),
         });
         setAviso(
-          sobrepreciosLimpiados === 0
-            ? "Listo. Ninguna otra compra estaba marcada de más."
-            : sobrepreciosLimpiados === 1
-              ? "Listo. Una compra dejó de contar como sobreprecio."
-              : `Listo. ${sobrepreciosLimpiados} compras dejaron de contar como sobreprecio.`
+          esOferta
+            ? sobrepreciosLimpiados === 0
+              ? "Listo. Ninguna otra compra estaba marcada de más."
+              : sobrepreciosLimpiados === 1
+                ? "Listo. Una compra dejó de contar como sobreprecio."
+                : `Listo. ${sobrepreciosLimpiados} compras dejaron de contar como sobreprecio.`
+            : sobrepreciosRestaurados === 0
+              ? "Listo. Ninguna compra vuelve a contar como sobreprecio."
+              : sobrepreciosRestaurados === 1
+                ? "Listo. Una compra vuelve a contar como sobreprecio."
+                : `Listo. ${sobrepreciosRestaurados} compras vuelven a contar como sobreprecio.`
         );
       } catch (e) {
         setError(
@@ -163,7 +167,9 @@ export function HistorialPreciosDialog({
                     </Badge>
                   )}
                   {compra.esSobreprecio && <BadgeLinea tipo="sobreprecio" />}
-                  {compra.esPrecioBase && <BadgeLinea tipo="precioBase" />}
+                  {compra.esPrecioBase && !compra.esOferta && (
+                    <BadgeLinea tipo="precioBase" />
+                  )}
                   {compra.esPesoDesconocido && (
                     <BadgeLinea tipo="pesoDesconocido" />
                   )}

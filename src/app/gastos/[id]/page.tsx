@@ -161,7 +161,9 @@ export default async function DetalleGastoPage({
                   <div className="flex flex-col items-start gap-1">
                     <BadgeLinea tipo="hormiga" activo={item.esHormiga} />
                     {item.esSobreprecio && <BadgeLinea tipo="sobreprecio" />}
-                    {item.esPrecioBase && <BadgeLinea tipo="precioBase" />}
+                    {item.esPrecioBase && !item.esOferta && (
+                      <BadgeLinea tipo="precioBase" />
+                    )}
                     {item.esOferta && <BadgeLinea tipo="oferta" />}
                     {item.esPesoDesconocido && (
                       <BadgeLinea tipo="pesoDesconocido" />

@@ -336,6 +336,32 @@ export function paresDe(ids: number[]): [number, number][] {
   return pares;
 }
 
+/**
+ * Traslada al que se conserva los pares descartados de los que se absorben al
+ * combinar, para no volver a ofrecer una combinación ya rechazada. Un par
+ * entre dos de los que se combinan deja de tener sentido y se pierde.
+ * @param descartes pares (menor, mayor) donde aparece alguno de los absorbidos
+ * @returns los pares (menor, mayor) que pasan a ser del conservado, sin repetir
+ */
+export function paresHeredados(
+  descartes: [number, number][],
+  absorbidos: number[],
+  conservado: number
+): [number, number][] {
+  const heredados = new Map<string, [number, number]>();
+  for (const [menor, mayor] of descartes) {
+    const absorbeMenor = absorbidos.includes(menor);
+    if (!absorbeMenor && !absorbidos.includes(mayor)) continue;
+    const otro = absorbeMenor ? mayor : menor;
+    if (otro === conservado || absorbidos.includes(otro)) continue;
+    heredados.set(clavePar(conservado, otro), [
+      Math.min(conservado, otro),
+      Math.max(conservado, otro),
+    ]);
+  }
+  return [...heredados.values()];
+}
+
 function agruparPares(pares: [number, number][]) {
   const padre = new Map<number, number>();
   const raiz = (id: number): number => {

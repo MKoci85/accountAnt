@@ -13,12 +13,11 @@ import {
   normalizarUnidad,
   etiquetaUnidad,
   claveReferencia,
+  fechaLimiteVentanaPrecio,
+  referenciasDePrecio,
   type UnidadMedida,
 } from "@/lib/precios-referencia";
-import {
-  leerMargenSobreprecioPeso,
-  leerVentanaMesesReferencia,
-} from "@/lib/config-server";
+import { leerAjuste } from "@/lib/config-server";
 import { aISO } from "@/lib/formato";
 
 export type FiltrosReporte = {
@@ -93,69 +92,40 @@ async function obtenerLineas(filtros: FiltrosReporte): Promise<LineaPlana[]> {
 }
 
 async function obtenerReferenciasPrecio() {
-  const hoy = new Date();
-  hoy.setMonth(hoy.getMonth() - (await leerVentanaMesesReferencia()));
-  const fechaLimite = aISO(hoy);
+  const fechaLimite = fechaLimiteVentanaPrecio(
+    aISO(new Date()),
+    await leerAjuste("ventanaMesesReferencia")
+  );
 
   const filas = await db
     .select({
+      gastoItemId: gastoItems.id,
       itemCatalogoId: gastoItems.itemCatalogoId,
-      precio: gastoItems.precio,
-      esPrecioBase: gastoItems.esPrecioBase,
-      esPesoDesconocido: gastoItems.esPesoDesconocido,
-      esOferta: gastoItems.esOferta,
-      fecha: gastos.fecha,
-      emisorNombre: emisores.nombre,
       unidad: gastoItems.unidad,
+      precio: gastoItems.precio,
+      fecha: gastos.fecha,
+      esPrecioBase: gastoItems.esPrecioBase,
+      esOferta: gastoItems.esOferta,
+      esPesoDesconocido: gastoItems.esPesoDesconocido,
+      emisorNombre: emisores.nombre,
     })
     .from(gastoItems)
     .innerJoin(gastos, eq(gastos.id, gastoItems.gastoId))
     .innerJoin(emisores, eq(emisores.id, gastos.emisorId))
     .where(gte(gastos.fecha, fechaLimite));
 
-  const referencias = new Map<string, Referencia>();
-  const basesPorItem = new Map<
-    string,
-    { precio: number; fecha: string; emisorNombre: string; unidad: UnidadMedida }
-  >();
-  for (const fila of filas) {
-    if (fila.itemCatalogoId == null || fila.esPesoDesconocido) continue;
-    if (fila.esOferta) continue;
-    const unidad = normalizarUnidad(fila.unidad);
-    const clave = claveReferencia(fila.itemCatalogoId, unidad);
-
-    const actual = referencias.get(clave);
-    if (!actual || fila.precio < actual.minimo) {
-      referencias.set(clave, {
-        minimo: fila.precio,
-        emisorNombre: fila.emisorNombre,
-        unidad,
-      });
-    }
-    if (!fila.esPrecioBase) continue;
-    const baseActual = basesPorItem.get(clave);
-    if (!baseActual || fila.fecha > baseActual.fecha) {
-      basesPorItem.set(clave, {
-        precio: fila.precio,
-        fecha: fila.fecha,
-        emisorNombre: fila.emisorNombre,
-        unidad,
-      });
-    }
-  }
-
-  for (const [clave, base] of basesPorItem) {
-    const actual = referencias.get(clave);
-    if (!actual || base.precio < actual.minimo) {
-      referencias.set(clave, {
-        minimo: base.precio,
-        emisorNombre: base.emisorNombre,
-        unidad: base.unidad,
-      });
-    }
-  }
-
-  return referencias;
+  return new Map(
+    [...referenciasDePrecio(filas, fechaLimite)].map(
+      ([clave, compra]): [string, Referencia] => [
+        clave,
+        {
+          minimo: compra.precio,
+          emisorNombre: compra.emisorNombre,
+          unidad: normalizarUnidad(compra.unidad),
+        },
+      ]
+    )
+  );
 }
 
 type Referencia = {
@@ -193,36 +163,30 @@ export type Reporte = Awaited<ReturnType<typeof obtenerReporte>>;
  * @param filtros Rango de fechas y filtros opcionales de categoría/emisor.
  */
 export async function obtenerReporte(filtros: FiltrosReporte) {
-  const lineas = await obtenerLineas(filtros);
   const referencias = await obtenerReferenciasPrecio();
-  const margen = await leerMargenSobreprecioPeso();
+  const margen = await leerAjuste("margenSobreprecioPeso");
+  const lineas = (await obtenerLineas(filtros)).map((linea) => {
+    const referencia = linea.esSobreprecio
+      ? referenciaDe(referencias, linea.itemCatalogoId, linea.unidad)
+      : undefined;
+    return {
+      ...linea,
+      referencia,
+      pagadoDeMas: referencia
+        ? (linea.precio - precioReferenciaComparable(referencia, margen)) *
+          linea.cantidad
+        : 0,
+    };
+  });
 
   const totalGastado = lineas.reduce((acc, l) => acc + l.total, 0);
   const totalHormiga = lineas
     .filter((l) => l.esHormiga)
     .reduce((acc, l) => acc + l.total, 0);
-
-  let totalSobreprecio = 0;
-  for (const linea of lineas) {
-    if (!linea.esSobreprecio) continue;
-    const referencia = referenciaDe(
-      referencias,
-      linea.itemCatalogoId,
-      linea.unidad
-    );
-    if (!referencia) continue;
-    totalSobreprecio +=
-      (linea.precio - precioReferenciaComparable(referencia, margen)) * linea.cantidad;
-  }
-
+  const totalSobreprecio = lineas.reduce((acc, l) => acc + l.pagadoDeMas, 0);
   const sobreprecioEnHormiga = lineas
-    .filter((l) => l.esHormiga && l.esSobreprecio)
-    .reduce((acc, l) => {
-      const referencia = referenciaDe(referencias, l.itemCatalogoId, l.unidad);
-      return referencia
-        ? acc + (l.precio - precioReferenciaComparable(referencia, margen)) * l.cantidad
-        : acc;
-    }, 0);
+    .filter((l) => l.esHormiga)
+    .reduce((acc, l) => acc + l.pagadoDeMas, 0);
   const potencialAhorro = totalHormiga + totalSobreprecio - sobreprecioEnHormiga;
 
   const gastosUnicos = new Set(lineas.map((l) => l.gastoId));
@@ -280,14 +244,8 @@ export async function obtenerReporte(filtros: FiltrosReporte) {
     }
   >();
   for (const linea of lineas) {
-    if (!linea.esSobreprecio) continue;
-    const referencia = referenciaDe(
-      referencias,
-      linea.itemCatalogoId,
-      linea.unidad
-    );
-    if (!referencia) continue;
-    if (linea.itemCatalogoId == null) continue;
+    const { referencia } = linea;
+    if (!referencia || linea.itemCatalogoId == null) continue;
 
     let item = porItem.get(linea.itemCatalogoId);
     if (!item) {
@@ -307,8 +265,7 @@ export async function obtenerReporte(filtros: FiltrosReporte) {
     }
     item.comprasConSobreprecio += 1;
     item.totalPagado += linea.total;
-    item.pagadoDeMas +=
-      (linea.precio - precioReferenciaComparable(referencia, margen)) * linea.cantidad;
+    item.pagadoDeMas += linea.pagadoDeMas;
     item.precioPagadoMax = Math.max(item.precioPagadoMax, linea.precio);
   }
 
@@ -342,18 +299,7 @@ export async function obtenerReporte(filtros: FiltrosReporte) {
     }
     em.total += linea.total;
     if (linea.esHormiga) em.totalHormiga += linea.total;
-    if (linea.esSobreprecio) {
-      const referencia = referenciaDe(
-        referencias,
-        linea.itemCatalogoId,
-        linea.unidad
-      );
-      if (referencia) {
-        em.pagadoDeMas +=
-          (linea.precio - precioReferenciaComparable(referencia, margen)) *
-          linea.cantidad;
-      }
-    }
+    em.pagadoDeMas += linea.pagadoDeMas;
     em.visitas.add(linea.gastoId);
   }
 
@@ -383,15 +329,8 @@ export async function obtenerReporte(filtros: FiltrosReporte) {
     }
     m.total += linea.total;
     if (linea.esHormiga) m.hormiga += linea.total;
-    if (linea.esSobreprecio) {
-      const referencia = referenciaDe(referencias, linea.itemCatalogoId, linea.unidad);
-      if (referencia) {
-        const deMas =
-          (linea.precio - precioReferenciaComparable(referencia, margen)) * linea.cantidad;
-        m.sobreprecio += deMas;
-        if (linea.esHormiga) m.sobreprecioEnHormiga += deMas;
-      }
-    }
+    m.sobreprecio += linea.pagadoDeMas;
+    if (linea.esHormiga) m.sobreprecioEnHormiga += linea.pagadoDeMas;
   }
 
   let mesAnterior: number | null = null;
@@ -459,7 +398,7 @@ function redondearMonto(monto: number) {
  */
 export async function exportarReporteJSON(filtros: FiltrosReporte) {
   const reporte = await obtenerReporte(filtros);
-  const mesesVentana = await leerVentanaMesesReferencia();
+  const mesesVentana = await leerAjuste("ventanaMesesReferencia");
 
   const [todasCategorias, todosEmisores] = await Promise.all([
     db.select({ id: categorias.id, nombre: categorias.nombre }).from(categorias),
@@ -495,7 +434,7 @@ export async function exportarReporteJSON(filtros: FiltrosReporte) {
         gastoHormiga:
           "Compra pequeña e impulsiva, marcada manualmente por el usuario como evitable (no necesaria). Es el foco principal de ahorro.",
         oferta: "Línea que el usuario marcó como comprada en oferta o promoción. Su precio no se usa como precio de referencia de ese producto: es un precio circunstancial, y tomarlo como referencia haría que toda compra posterior a precio normal apareciera como sobreprecio. El gasto sí cuenta en los totales.",
-        sobreprecio: `Línea de gasto donde se pagó un precio mayor al precio de referencia de ese mismo producto (el mínimo pagado en cualquier comercio dentro de los últimos ${mesesVentana} meses). Se marca automáticamente al cargar el gasto, o a mano por el usuario. Si el usuario confirma que fue una suba general (no una mala compra), esa línea deja de contar como sobreprecio y pasa a ser la nueva referencia.`,
+        sobreprecio: `Línea de gasto donde se pagó un precio mayor al precio de referencia de ese mismo producto (el mínimo pagado en cualquier comercio dentro de los últimos ${mesesVentana} meses, sin contar ofertas). Se marca automáticamente al cargar el gasto, o a mano por el usuario. Si el usuario confirma que fue una suba general (no una mala compra), esa línea deja de contar como sobreprecio y pasa a ser la nueva referencia: las compras anteriores más baratas dejan de contar, aunque una compra más barata posterior vuelve a serlo.`,
         comparacionPorUnidadDeMedida:
           "Cada línea de gasto tiene una unidad: 'un' (piezas), 'kg' o 'L'. Cuando es kg o L, el campo 'precio' NO es el monto pagado sino el precio POR KILO (o por litro), y 'cantidad' es el peso de esa compra — el monto pagado es precio × cantidad. Esto es lo que hace comparables los productos de peso variable (frutas y verduras, quesos y fiambres, carne, panificados al peso), donde cada compra pesa distinto: 0,150 kg de cebolla a $14,85 y 0,400 kg a $40 son el mismo precio por kilo ($99 vs $100), y comparar los montos pagados marcaría la segunda compra como cara sólo porque pesa más. Los precios de referencia se agrupan por producto Y unidad, nunca se mezcla un precio por kilo con uno por pieza. En 'itemsConSobreprecio', 'precioMinimoConocido' viene en la unidad que indica 'unidadReferencia'.",
         pagadoDeMas:

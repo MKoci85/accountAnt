@@ -95,6 +95,76 @@ export function claveReferencia(itemCatalogoId: number, unidad: UnidadMedida) {
   return `${itemCatalogoId}|${unidad}`;
 }
 
+export type CompraParaReferencia = {
+  gastoItemId: number;
+  itemCatalogoId: number | null;
+  unidad: string | null;
+  precio: number;
+  fecha: string;
+  esPrecioBase: boolean;
+  esOferta: boolean;
+  esPesoDesconocido: boolean;
+};
+
+function esPosterior(a: CompraParaReferencia, b: CompraParaReferencia) {
+  return a.fecha > b.fecha || (a.fecha === b.fecha && a.gastoItemId > b.gastoItemId);
+}
+
+/**
+ * Elige, por ítem y unidad, la compra que hace de precio de referencia: la más
+ * barata desde la última marcada como "subió de precio", o de toda la ventana
+ * si no hay ninguna. Una suba confirmada reinicia el historial (lo anterior ya
+ * no describe el precio vigente), pero una compra más barata posterior vuelve a
+ * ser la referencia. Nunca cuentan las ofertas, las líneas sin peso ni las de
+ * precio no positivo; una oferta que además tenga la marca de suba tampoco
+ * reinicia nada mientras siga siendo oferta, así desmarcarla la restituye.
+ * @param compras líneas de gasto candidatas, en cualquier orden
+ * @param fechaLimite primera fecha que entra en la ventana de comparación
+ * @returns la compra de referencia de cada `claveReferencia`
+ */
+export function referenciasDePrecio<T extends CompraParaReferencia>(
+  compras: T[],
+  fechaLimite: string
+): Map<string, T> {
+  const porClave = new Map<string, T[]>();
+  for (const compra of compras) {
+    if (compra.itemCatalogoId == null) continue;
+    if (compra.esOferta || compra.esPesoDesconocido) continue;
+    if (compra.precio <= 0 || compra.fecha < fechaLimite) continue;
+    const clave = claveReferencia(
+      compra.itemCatalogoId,
+      normalizarUnidad(compra.unidad)
+    );
+    const candidatas = porClave.get(clave);
+    if (candidatas) candidatas.push(compra);
+    else porClave.set(clave, [compra]);
+  }
+
+  const referencias = new Map<string, T>();
+  for (const [clave, candidatas] of porClave) {
+    const ultimaBase = candidatas
+      .filter((c) => c.esPrecioBase)
+      .reduce<T | null>(
+        (ultima, c) => (ultima === null || esPosterior(c, ultima) ? c : ultima),
+        null
+      );
+
+    let referencia: T | null = null;
+    for (const compra of candidatas) {
+      if (ultimaBase && esPosterior(ultimaBase, compra)) continue;
+      if (
+        referencia === null ||
+        compra.precio < referencia.precio ||
+        (compra.precio === referencia.precio && esPosterior(compra, referencia))
+      ) {
+        referencia = compra;
+      }
+    }
+    if (referencia) referencias.set(clave, referencia);
+  }
+  return referencias;
+}
+
 export const MARGEN_OFERTA_DEFAULT = 0.15;
 
 /**

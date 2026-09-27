@@ -20,6 +20,7 @@ import {
   claveItemExacta,
   clavePar,
   paresDe,
+  paresHeredados,
 } from "@/lib/duplicados";
 
 function revalidarCatalogos() {
@@ -580,25 +581,24 @@ export async function combinarItemsCatalogo(datos: {
         .run();
     }
 
-    const heredados = tx
-      .select({
-        menor: itemsSimilaresDescartados.itemMenorId,
-        mayor: itemsSimilaresDescartados.itemMayorId,
-      })
-      .from(itemsSimilaresDescartados)
-      .where(
-        or(
-          inArray(itemsSimilaresDescartados.itemMenorId, absorberIds),
-          inArray(itemsSimilaresDescartados.itemMayorId, absorberIds)
+    const heredados = paresHeredados(
+      tx
+        .select({
+          menor: itemsSimilaresDescartados.itemMenorId,
+          mayor: itemsSimilaresDescartados.itemMayorId,
+        })
+        .from(itemsSimilaresDescartados)
+        .where(
+          or(
+            inArray(itemsSimilaresDescartados.itemMenorId, absorberIds),
+            inArray(itemsSimilaresDescartados.itemMayorId, absorberIds)
+          )
         )
-      )
-      .all()
-      .map((d) => (absorberIds.includes(d.menor) ? d.mayor : d.menor))
-      .filter((otro) => !todosIds.includes(otro))
-      .map((otro) => ({
-        itemMenorId: Math.min(conservado.id, otro),
-        itemMayorId: Math.max(conservado.id, otro),
-      }));
+        .all()
+        .map((d): [number, number] => [d.menor, d.mayor]),
+      absorberIds,
+      conservado.id
+    ).map(([itemMenorId, itemMayorId]) => ({ itemMenorId, itemMayorId }));
     if (heredados.length > 0) {
       tx.insert(itemsSimilaresDescartados)
         .values(heredados)

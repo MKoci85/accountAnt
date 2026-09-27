@@ -41,7 +41,7 @@ import type { ProveedorDisponibleIA } from "@/app/actions/configuracion";
 import type { EstadoCuota } from "@/lib/limitador-ia";
 import { separarReporteAdjunto, UMBRAL_AVISO_CONTEXTO } from "@/lib/chat-ia";
 import type { ProveedorIA } from "@/lib/proveedores-ia";
-import { formatearFechaLarga } from "@/lib/formato";
+import { formatearFechaLarga, mesEnCurso } from "@/lib/formato";
 import { cn } from "@/lib/utils";
 
 export function ChatIAView({
@@ -307,16 +307,9 @@ function PanelChat({ conversacion }: { conversacion: ConversacionCompleta }) {
   function handleAdjuntarMes() {
     setError(null);
     startAdjunto(async () => {
-      const hoy = new Date();
-      const iso = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
       try {
         const { adjunto: nuevo } = await prepararReporteParaChat(
-          {
-            desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
-            hasta: iso(hoy),
-          },
+          mesEnCurso(),
           { tipo: "existente", conversacionId: conversacion.id },
         );
         setAdjunto(nuevo);

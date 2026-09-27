@@ -4,15 +4,7 @@ import { useState, useTransition } from "react";
 import { Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  guardarOpenRouterReferer,
-  guardarTimeoutBcuMs,
-  guardarTimeoutIaChatMs,
-  guardarTimeoutIaMs,
-  guardarUrlBcu,
-  guardarUrlDgi,
-  type ConfigAvanzada,
-} from "@/app/actions/configuracion";
+import { guardarAjuste, type ConfigAvanzada } from "@/app/actions/configuracion";
 import {
   CampoNumero,
   MensajeLinea,
@@ -33,48 +25,48 @@ export function ConfiguracionEndpointsDialog({
       <div className="flex flex-col gap-4">
         <CampoTexto
           etiqueta="URL del servicio de cotizaciones del BCU"
-          valor={inicial.bcuUrl}
-          porDefecto={inicial.bcuUrlPorDefecto}
+          valor={inicial.bcuUrl.valor}
+          porDefecto={inicial.bcuUrl.porDefecto}
           ayuda="Endpoint SOAP del que se saca la cotización del dólar al importar un estado de cuenta en USD."
-          onGuardar={guardarUrlBcu}
+          onGuardar={(v) => guardarAjuste("bcuUrl", v)}
         />
         <CampoNumero
           etiqueta="Timeout del BCU"
           sufijo="ms"
-          valor={inicial.bcuTimeoutMs}
-          porDefecto={inicial.bcuTimeoutMsPorDefecto}
+          valor={inicial.bcuTimeoutMs.valor}
+          porDefecto={inicial.bcuTimeoutMs.porDefecto}
           ayuda="Cuánto se espera la respuesta del BCU antes de dar la cotización por perdida. Al vencerse, la línea queda para carga manual."
-          onGuardar={guardarTimeoutBcuMs}
+          onGuardar={(v) => guardarAjuste("bcuTimeoutMs", v)}
         />
         <CampoTexto
           etiqueta="URL de consulta de CFE de DGI"
-          valor={inicial.dgiUrl}
-          porDefecto={inicial.dgiUrlPorDefecto}
+          valor={inicial.dgiUrl.valor}
+          porDefecto={inicial.dgiUrl.porDefecto}
           ayuda="Con esta URL se valida que el QR de un ticket corresponda a un comprobante autorizado."
-          onGuardar={guardarUrlDgi}
+          onGuardar={(v) => guardarAjuste("dgiUrl", v)}
         />
         <CampoNumero
           etiqueta="Timeout de las consultas con IA"
           sufijo="ms"
-          valor={inicial.iaTimeoutMs}
-          porDefecto={inicial.iaTimeoutMsPorDefecto}
+          valor={inicial.iaTimeoutMs.valor}
+          porDefecto={inicial.iaTimeoutMs.porDefecto}
           ayuda="Compartido por todos los proveedores. Analizar una foto de un estado de cuenta puede tardar bastante: bajarlo mucho corta consultas que iban a responder."
-          onGuardar={guardarTimeoutIaMs}
+          onGuardar={(v) => guardarAjuste("iaTimeoutMs", v)}
         />
         <CampoNumero
           etiqueta="Timeout del chat del asistente"
           sufijo="ms"
-          valor={inicial.iaTimeoutChatMs}
-          porDefecto={inicial.iaTimeoutChatMsPorDefecto}
+          valor={inicial.iaTimeoutChatMs.valor}
+          porDefecto={inicial.iaTimeoutChatMs.porDefecto}
           ayuda="Separado del anterior porque una respuesta de chat es corta: esperar dos minutos por ella no tiene sentido. Si el proveedor que usás es lento, subilo."
-          onGuardar={guardarTimeoutIaChatMs}
+          onGuardar={(v) => guardarAjuste("iaTimeoutChatMs", v)}
         />
         <CampoTexto
           etiqueta="HTTP-Referer de OpenRouter"
-          valor={inicial.openRouterReferer}
-          porDefecto={inicial.openRouterRefererPorDefecto}
+          valor={inicial.openRouterReferer.valor}
+          porDefecto={inicial.openRouterReferer.porDefecto}
           ayuda="OpenRouter lo usa para atribuir el tráfico en tu cuenta. El default apunta a localhost: si servís la app por Tailscale, poné acá esa dirección para que las consultas se atribuyan bien."
-          onGuardar={guardarOpenRouterReferer}
+          onGuardar={(v) => guardarAjuste("openRouterReferer", v)}
         />
       </div>
     </SeccionColapsable>

@@ -40,6 +40,7 @@ export type ItemTicket = {
 
 export type ResultadoConsultaCFE = {
   datosQR: DatosQR;
+  fechaISO: string;
   dgiValido: boolean;
   dgiMensaje: string;
   emisor: Emisor;
@@ -119,6 +120,7 @@ export async function consultarCFE(qrTexto: string): Promise<ResultadoConsultaCF
 
   return {
     datosQR,
+    fechaISO: fechaISODesdeQR(datosQR.fecha),
     dgiValido: validacion.valido,
     dgiMensaje: validacion.mensaje,
     emisor,

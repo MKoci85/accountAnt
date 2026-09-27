@@ -1,11 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cotizaciones } from "@/db/schema";
-import {
-  leerDiasHaciaAtrasBcu,
-  leerTimeoutBcuMs,
-  leerUrlBcu,
-} from "@/lib/config-server";
+import { leerAjuste } from "@/lib/config-server";
 
 const MONEDA_USD = 2222;
 
@@ -73,18 +69,18 @@ function parsearRespuesta(xml: string): Cotizacion[] {
 export async function obtenerCotizacionUSD(
   fecha: string
 ): Promise<Cotizacion | null> {
-  const desde = restarDias(fecha, await leerDiasHaciaAtrasBcu());
+  const desde = restarDias(fecha, await leerAjuste("bcuDiasHaciaAtras"));
 
   let respuesta: Response;
   try {
-    respuesta = await fetch(await leerUrlBcu(), {
+    respuesta = await fetch(await leerAjuste("bcuUrl"), {
       method: "POST",
       headers: {
         "Content-Type": "text/xml;charset=UTF-8",
         SOAPAction: "Execute",
       },
       body: construirSobre(desde, fecha),
-      signal: AbortSignal.timeout(await leerTimeoutBcuMs()),
+      signal: AbortSignal.timeout(await leerAjuste("bcuTimeoutMs")),
     });
   } catch {
     return null;

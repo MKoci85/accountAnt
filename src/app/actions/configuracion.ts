@@ -9,69 +9,36 @@ import {
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
 import {
+  AJUSTES,
   CLAVE_API_KEY_LEGACY,
   CLAVE_PROVEEDOR,
   borrarConfig,
   claveApiKey,
   claveModelo,
+  escribirAjuste,
   escribirCatalogoModelos,
-  leerCatalogoModelos,
   escribirConfig,
   escribirLimitadorActivo,
   escribirRpdEfectivo,
   escribirTpmEfectivo,
+  escribirUrlIA,
+  esAjuste,
+  leerAjuste,
   leerApiKeyIA,
+  leerCatalogoModelos,
   leerLimitadorActivo,
   leerModeloIA,
   leerProveedorIA,
   leerProveedoresConKey,
   leerRpdEfectivo,
   leerTpmEfectivo,
-  escribirDiasHaciaAtrasBcu,
-  escribirMargenOferta,
-  escribirMargenSobreprecioPeso,
-  escribirOpenRouterReferer,
-  escribirTimeoutBcuMs,
-  escribirTimeoutIaChatMs,
-  escribirTimeoutIaMs,
-  escribirUrlBcu,
-  escribirUrlDgi,
-  escribirUrlIA,
-  escribirVentanaMesesReferencia,
-  leerDiasHaciaAtrasBcu,
-  leerMargenOferta,
-  leerMargenSobreprecioPeso,
-  leerOpenRouterReferer,
-  leerTimeoutBcuMs,
-  leerTimeoutIaChatMs,
-  leerTimeoutIaMs,
-  leerUrlBcu,
-  leerUrlDgi,
   leerUrlIA,
-  leerVentanaMesesReferencia,
-  BCU_DIAS_HACIA_ATRAS_DEFAULT,
-  BCU_TIMEOUT_MS_DEFAULT,
-  BCU_URL_DEFAULT,
-  DGI_URL_DEFAULT,
-  IA_TIMEOUT_CHAT_MS_DEFAULT,
-  IA_TIMEOUT_MS_DEFAULT,
-  OPENROUTER_REFERER_DEFAULT,
+  type Ajuste,
+  type ValorAjuste,
 } from "@/lib/config-server";
-import {
-  MARGEN_OFERTA_DEFAULT,
-  MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
-  MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
-} from "@/lib/precios-referencia";
 
 export async function obtenerProveedorIA(): Promise<ProveedorIA> {
   return leerProveedorIA();
-}
-
-/**
- * @returns Si el proveedor de IA activo tiene una API key configurada.
- */
-export async function hayApiKeyIAConfigurada(): Promise<boolean> {
-  return (await leerApiKeyIA(await leerProveedorIA())) !== null;
 }
 
 function enmascarar(key: string): string {
@@ -261,125 +228,40 @@ export async function guardarProveedorActivoIA(proveedor: ProveedorIA) {
 }
 
 export type ConfigAvanzada = {
-  margenSobreprecioPeso: number;
-  margenSobreprecioPesoPorDefecto: number;
-  margenOferta: number;
-  margenOfertaPorDefecto: number;
-  ventanaMesesReferencia: number;
-  ventanaMesesReferenciaPorDefecto: number;
-  bcuDiasHaciaAtras: number;
-  bcuDiasHaciaAtrasPorDefecto: number;
-  bcuUrl: string;
-  bcuUrlPorDefecto: string;
-  bcuTimeoutMs: number;
-  bcuTimeoutMsPorDefecto: number;
-  dgiUrl: string;
-  dgiUrlPorDefecto: string;
-  iaTimeoutMs: number;
-  iaTimeoutMsPorDefecto: number;
-  iaTimeoutChatMs: number;
-  iaTimeoutChatMsPorDefecto: number;
-  openRouterReferer: string;
-  openRouterRefererPorDefecto: string;
+  [K in Ajuste]: { valor: ValorAjuste<K>; porDefecto: ValorAjuste<K> };
 };
 
 export async function obtenerConfigAvanzada(): Promise<ConfigAvanzada> {
-  return {
-    margenSobreprecioPeso: await leerMargenSobreprecioPeso(),
-    margenSobreprecioPesoPorDefecto: MARGEN_SOBREPRECIO_POR_PESO_DEFAULT,
-    margenOferta: await leerMargenOferta(),
-    margenOfertaPorDefecto: MARGEN_OFERTA_DEFAULT,
-    ventanaMesesReferencia: await leerVentanaMesesReferencia(),
-    ventanaMesesReferenciaPorDefecto: MESES_VENTANA_PRECIO_REFERENCIA_DEFAULT,
-    bcuDiasHaciaAtras: await leerDiasHaciaAtrasBcu(),
-    bcuDiasHaciaAtrasPorDefecto: BCU_DIAS_HACIA_ATRAS_DEFAULT,
-    bcuUrl: await leerUrlBcu(),
-    bcuUrlPorDefecto: BCU_URL_DEFAULT,
-    bcuTimeoutMs: await leerTimeoutBcuMs(),
-    bcuTimeoutMsPorDefecto: BCU_TIMEOUT_MS_DEFAULT,
-    dgiUrl: await leerUrlDgi(),
-    dgiUrlPorDefecto: DGI_URL_DEFAULT,
-    iaTimeoutMs: await leerTimeoutIaMs(),
-    iaTimeoutMsPorDefecto: IA_TIMEOUT_MS_DEFAULT,
-    iaTimeoutChatMs: await leerTimeoutIaChatMs(),
-    iaTimeoutChatMsPorDefecto: IA_TIMEOUT_CHAT_MS_DEFAULT,
-    openRouterReferer: await leerOpenRouterReferer(),
-    openRouterRefererPorDefecto: OPENROUTER_REFERER_DEFAULT,
-  };
+  const entradas = await Promise.all(
+    (Object.keys(AJUSTES) as Ajuste[]).map(async (ajuste) => [
+      ajuste,
+      { valor: await leerAjuste(ajuste), porDefecto: AJUSTES[ajuste].porDefecto },
+    ]),
+  );
+  return Object.fromEntries(entradas) as ConfigAvanzada;
 }
 
-function numeroPositivo(valor: number, nombre: string): number {
-  if (!Number.isFinite(valor) || valor <= 0) {
-    throw new Error(`${nombre} tiene que ser un número mayor que cero`);
+/**
+ * Guarda un ajuste de `AJUSTES`, validando el valor según el tipo de su
+ * default: un número tiene que ser positivo y un texto no puede estar vacío.
+ */
+export async function guardarAjuste(ajuste: Ajuste, valor: number | string) {
+  if (!esAjuste(ajuste)) throw new Error("Ajuste desconocido");
+  const { porDefecto, nombre, revalidar } = AJUSTES[ajuste];
+
+  if (typeof porDefecto === "number") {
+    if (typeof valor !== "number" || !Number.isFinite(valor) || valor <= 0) {
+      throw new Error(`${nombre} tiene que ser un número mayor que cero`);
+    }
+    await escribirAjuste(ajuste, valor);
+  } else {
+    const limpio = typeof valor === "string" ? valor.trim() : "";
+    if (!limpio) throw new Error(`${nombre} no puede estar vacío`);
+    await escribirAjuste(ajuste, limpio);
   }
-  return valor;
-}
 
-function textoNoVacio(valor: string, nombre: string): string {
-  const limpio = valor.trim();
-  if (!limpio) throw new Error(`${nombre} no puede estar vacío`);
-  return limpio;
-}
-
-export async function guardarMargenSobreprecioPeso(valor: number) {
-  await escribirMargenSobreprecioPeso(
-    numeroPositivo(valor, "El margen de sobreprecio"),
-  );
   revalidatePath("/ajustes");
-  revalidatePath("/reportes");
-  revalidatePath("/gastos");
-}
-
-export async function guardarMargenOferta(valor: number) {
-  await escribirMargenOferta(numeroPositivo(valor, "El margen de oferta"));
-  revalidatePath("/ajustes");
-  revalidatePath("/gastos");
-}
-
-export async function guardarVentanaMesesReferencia(valor: number) {
-  await escribirVentanaMesesReferencia(
-    numeroPositivo(valor, "La ventana de meses"),
-  );
-  revalidatePath("/ajustes");
-  revalidatePath("/reportes");
-  revalidatePath("/gastos");
-}
-
-export async function guardarDiasHaciaAtrasBcu(valor: number) {
-  await escribirDiasHaciaAtrasBcu(numeroPositivo(valor, "Los días hacia atrás"));
-  revalidatePath("/ajustes");
-}
-
-export async function guardarUrlBcu(url: string) {
-  await escribirUrlBcu(textoNoVacio(url, "La URL del BCU"));
-  revalidatePath("/ajustes");
-}
-
-export async function guardarTimeoutBcuMs(ms: number) {
-  await escribirTimeoutBcuMs(numeroPositivo(ms, "El timeout del BCU"));
-  revalidatePath("/ajustes");
-}
-
-export async function guardarUrlDgi(url: string) {
-  await escribirUrlDgi(textoNoVacio(url, "La URL de DGI"));
-  revalidatePath("/ajustes");
-}
-
-export async function guardarTimeoutIaMs(ms: number) {
-  await escribirTimeoutIaMs(numeroPositivo(ms, "El timeout de IA"));
-  revalidatePath("/ajustes");
-  revalidatePath("/estado-cuenta");
-}
-
-export async function guardarTimeoutIaChatMs(ms: number) {
-  await escribirTimeoutIaChatMs(numeroPositivo(ms, "El timeout del chat"));
-  revalidatePath("/ajustes");
-}
-
-export async function guardarOpenRouterReferer(valor: string) {
-  await escribirOpenRouterReferer(textoNoVacio(valor, "El HTTP-Referer"));
-  revalidatePath("/ajustes");
-  revalidatePath("/estado-cuenta");
+  for (const ruta of revalidar) revalidatePath(ruta);
 }
 
 export async function guardarUrlProveedorIA(
@@ -421,7 +303,7 @@ export async function actualizarModelosProveedor(
     const r = await fetch(catalogo.url, {
       headers: { accept: "application/json" },
       cache: "no-store",
-      signal: AbortSignal.timeout(await leerTimeoutIaMs()),
+      signal: AbortSignal.timeout(await leerAjuste("iaTimeoutMs")),
     });
     if (!r.ok) {
       return {

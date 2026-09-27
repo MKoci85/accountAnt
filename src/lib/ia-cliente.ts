@@ -2,11 +2,7 @@ import {
   configDe,
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
-import {
-  leerOpenRouterReferer,
-  leerTimeoutIaMs,
-  leerUrlIA,
-} from "@/lib/config-server";
+import { leerAjuste, leerUrlIA } from "@/lib/config-server";
 
 export type ImagenAdjunta = { base64: string; mimeType: string };
 
@@ -81,7 +77,7 @@ async function unaLlamada(
       reintentable: false,
     };
   }
-  const timeoutMs = opciones.timeoutMs ?? (await leerTimeoutIaMs());
+  const timeoutMs = opciones.timeoutMs ?? (await leerAjuste("iaTimeoutMs"));
   const cachear = Boolean(opciones.cachear && config.soportaCache);
 
   try {
@@ -210,7 +206,7 @@ async function unaLlamada(
         authorization: `Bearer ${apiKey}`,
         ...config.headersExtra,
         ...(config.refererConfigurable
-          ? { "HTTP-Referer": await leerOpenRouterReferer() }
+          ? { "HTTP-Referer": await leerAjuste("openRouterReferer") }
           : {}),
       },
       body: JSON.stringify({

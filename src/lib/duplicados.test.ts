@@ -8,6 +8,7 @@ import {
   describirPresentacion,
   nombresParecidos,
   paresDe,
+  paresHeredados,
   parsearPresentacion,
   separarPresentacion,
   sonItemsSimilares,
@@ -240,5 +241,33 @@ describe("agruparGastosCombinables", () => {
         new Set([clavePar(3, 4)])
       )
     ).toEqual([]);
+  });
+});
+
+describe("paresHeredados", () => {
+  it("pasa al conservado los descartes de los absorbidos", () => {
+    expect(paresHeredados([[2, 9], [1, 5]], [5, 9], 3)).toEqual([
+      [2, 3],
+      [1, 3],
+    ]);
+  });
+
+  it("pierde los pares entre los que se combinan y no repite", () => {
+    expect(
+      paresHeredados(
+        [
+          [3, 5],
+          [5, 9],
+          [5, 7],
+          [7, 9],
+        ],
+        [5, 9],
+        3
+      )
+    ).toEqual([[3, 7]]);
+  });
+
+  it("ignora los pares donde no aparece ningún absorbido", () => {
+    expect(paresHeredados([[1, 2]], [5], 3)).toEqual([]);
   });
 });

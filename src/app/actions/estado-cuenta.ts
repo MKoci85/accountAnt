@@ -9,7 +9,7 @@ import {
   itemsCatalogo,
   emisorAlias,
 } from "@/db/schema";
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { extraerFilasPdf } from "@/lib/pdf";
 import {
@@ -297,25 +297,23 @@ export async function importarMovimientos(seleccion: SeleccionImportacion[]) {
     .limit(1);
 
   const emisorIdPorNombre = new Map<string, number>();
+  const existentes = await db
+    .select({ id: emisores.id, nombre: emisores.nombre })
+    .from(emisores)
+    .orderBy(asc(emisores.id));
+  for (const emisor of existentes) {
+    const clave = emisor.nombre.toLowerCase();
+    if (!emisorIdPorNombre.has(clave)) emisorIdPorNombre.set(clave, emisor.id);
+  }
+
   for (const linea of seleccion) {
     const clave = linea.emisorNombre.toLowerCase();
     if (emisorIdPorNombre.has(clave)) continue;
-
-    const [existente] = await db
-      .select()
-      .from(emisores)
-      .where(sql`lower(${emisores.nombre}) = ${clave}`)
-      .limit(1);
-
-    if (existente) {
-      emisorIdPorNombre.set(clave, existente.id);
-    } else {
-      const [creado] = await db
-        .insert(emisores)
-        .values({ nombre: linea.emisorNombre })
-        .returning();
-      emisorIdPorNombre.set(clave, creado.id);
-    }
+    const [creado] = await db
+      .insert(emisores)
+      .values({ nombre: linea.emisorNombre })
+      .returning();
+    emisorIdPorNombre.set(clave, creado.id);
   }
 
   const gastoIds: number[] = [];
