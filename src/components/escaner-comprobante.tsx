@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { consultarCFE, type ResultadoConsultaCFE } from "@/app/actions/cfe";
+import { interpretarLinkCfeConIA } from "@/app/actions/ia";
+import { prepararImagen } from "@/lib/subidas";
+import { EsperandoIA } from "@/components/esperando-ia";
 import { guardarProveedorEmisor } from "@/app/actions/catalogos";
 import {
   PROCESADORES_CONOCIDOS,
@@ -107,6 +110,10 @@ export function EscanerComprobante({
   const [analizandoFoto, setAnalizandoFoto] = useState(false);
   const [errorFoto, setErrorFoto] = useState<string | null>(null);
   const fotoInputRef = useRef<HTMLInputElement | null>(null);
+  const [fotoSinQR, setFotoSinQR] = useState<File | null>(null);
+  const [leyendoLink, setLeyendoLink] = useState(false);
+  const [linkLeidoConIA, setLinkLeidoConIA] = useState(false);
+  const [avisoModelo, setAvisoModelo] = useState<string | null>(null);
 
   function aplicarResultado(resultado: ResultadoConsultaCFE) {
     setResultado(resultado);
@@ -137,8 +144,12 @@ export function EscanerComprobante({
     setError(null);
     startTransition(async () => {
       try {
-        const resultado = await consultarCFE(texto.trim());
-        aplicarResultado(resultado);
+        const r = await consultarCFE(texto.trim());
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        aplicarResultado(r.resultado);
       } catch (e) {
         setError(e instanceof Error ? e.message : "No se pudo leer el QR");
       }
@@ -147,6 +158,7 @@ export function EscanerComprobante({
 
   function handleConsultar() {
     if (!qrTexto.trim()) return;
+    if (!error) setLinkLeidoConIA(false);
     consultar(qrTexto);
   }
 
@@ -156,6 +168,9 @@ export function EscanerComprobante({
     if (!file) return;
 
     setErrorFoto(null);
+    setFotoSinQR(null);
+    setLinkLeidoConIA(false);
+    setAvisoModelo(null);
     setAnalizandoFoto(true);
     try {
       const bitmap = await createImageBitmap(file);
@@ -167,9 +182,7 @@ export function EscanerComprobante({
       bitmap.close();
 
       if (!code?.data) {
-        setErrorFoto(
-          "No se encontró ningún QR en la foto. Probá con otra imagen más nítida, o si el ticket no tiene QR, cargalo desde \"Importar\" con análisis por IA."
-        );
+        setFotoSinQR(file);
         return;
       }
       consultar(code.data);
@@ -179,6 +192,33 @@ export function EscanerComprobante({
       );
     } finally {
       setAnalizandoFoto(false);
+    }
+  }
+
+  async function handleLeerLinkConIA() {
+    const file = fotoSinQR;
+    if (!file) return;
+
+    setFotoSinQR(null);
+    setLeyendoLink(true);
+    try {
+      const r = await interpretarLinkCfeConIA({
+        tipo: "imagen",
+        ...(await prepararImagen(file)),
+      });
+      if (!r.ok || !r.link) {
+        setErrorFoto(r.error ?? "No se pudo leer el link de la foto");
+        return;
+      }
+      setLinkLeidoConIA(true);
+      setAvisoModelo(r.aviso ?? null);
+      consultar(r.link);
+    } catch (err) {
+      setErrorFoto(
+        err instanceof Error ? err.message : "No se pudo leer el link de la foto"
+      );
+    } finally {
+      setLeyendoLink(false);
     }
   }
 
@@ -219,8 +259,12 @@ export function EscanerComprobante({
           urlConsulta: urlProcesador.trim(),
           formato: (procesadorElegido || "otro") as FormatoProveedorCfe,
         });
-        const nuevoResultado = await consultarCFE(qrTexto.trim());
-        aplicarResultado(nuevoResultado);
+        const r = await consultarCFE(qrTexto.trim());
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        aplicarResultado(r.resultado);
       } catch (e) {
         setError(
           e instanceof Error ? e.message : "No se pudo guardar el proveedor"
@@ -256,12 +300,12 @@ export function EscanerComprobante({
               <button
                 type="button"
                 onClick={() => fotoInputRef.current?.click()}
-                disabled={analizandoFoto}
+                disabled={analizandoFoto || leyendoLink}
                 className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-input bg-muted/40 px-3 py-5 text-center hover:bg-muted/60 disabled:opacity-60"
               >
                 <ImageUp className="h-6 w-6 text-muted-foreground" />
                 <div className="text-[13px] font-medium text-muted-foreground">
-                  {analizandoFoto ? "Buscando QR..." : "Subir foto con QR"}
+                  {analizandoFoto ? "Buscando QR..." : "Subir foto con QR o link"}
                 </div>
               </button>
               <input
@@ -276,6 +320,28 @@ export function EscanerComprobante({
           <canvas ref={canvasRef} className="hidden" />
           {camara.error && (
             <p className="text-xs text-destructive">{camara.error}</p>
+          )}
+          {fotoSinQR && (
+            <div className="flex flex-col gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+              <p className="text-[12.5px] text-muted-foreground">
+                No se encontró ningún QR en la foto. Si el ticket trae impreso
+                el link de DGI, la IA puede leerlo: la foto se manda a tu
+                proveedor de IA tal cual.
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={handleLeerLinkConIA}>
+                  Leer el link con IA
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setFotoSinQR(null)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+          {leyendoLink && (
+            <div className="text-xs text-muted-foreground">
+              <EsperandoIA texto="Leyendo el link..." />
+            </div>
           )}
           {errorFoto && <p className="text-xs text-destructive">{errorFoto}</p>}
           {isPending && (
@@ -292,7 +358,7 @@ export function EscanerComprobante({
             <Input
               value={qrTexto}
               onChange={(e) => setQrTexto(e.target.value)}
-              placeholder="RUC,tipoCFE,serie,numero,monto,fecha,hash"
+              placeholder="Link impreso en el ticket, o RUC,tipoCFE,serie,numero,monto,fecha,hash"
               className="text-[13px]"
             />
           </div>
@@ -304,19 +370,33 @@ export function EscanerComprobante({
             {isPending ? "Consultando..." : "Consultar comprobante"}
           </Button>
           {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && linkLeidoConIA && (
+            <p className="text-xs text-muted-foreground">
+              El link de arriba lo leyó la IA de la foto. Comparalo con el
+              ticket (suele confundir 0 con O y 1 con l), corregilo y volvé a
+              consultar.{avisoModelo ? ` ${avisoModelo}` : ""}
+            </p>
+          )}
         </div>
       )}
 
       {resultado && (
         <div className="flex flex-col gap-3">
           <div className="flex items-start gap-2 text-[12.5px]">
-            {resultado.dgiValido ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-            )}
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
             <span className="text-muted-foreground">{resultado.dgiMensaje}</span>
           </div>
+
+          {linkLeidoConIA && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3.5 py-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <p className="text-[12.5px] text-muted-foreground">
+                El link lo leyó la IA de la foto, y DGI sólo confirma RUC,
+                serie y número. Revisá la fecha y el total contra el ticket.
+                {avisoModelo ? ` ${avisoModelo}` : ""}
+              </p>
+            </div>
+          )}
 
           <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-[13px]">
             <div className="font-medium">{resultado.emisor.nombre}</div>

@@ -7,6 +7,7 @@ const {
   parsearNombreItem,
   parsearComprobantePdfFacturalista,
   parsearComprobantePdfIjserv,
+  parsearItemsPdfUcfe,
 } = await import("@/lib/cfe");
 
 const PAYLOAD = "212345670012,101,A,1234,500.00,2026-09-03,ABC123";
@@ -33,6 +34,12 @@ describe("parsearQR", () => {
     const qr = parsearQR("212345670012,101,%20A%20,1234,500.00,2026-09-03,ABC%2B123");
     expect(qr.serie).toBe("A");
     expect(qr.hash).toBe("ABC+123");
+  });
+
+  it("acepta el link impreso en el ticket copiado en varios renglones", () => {
+    const copiado =
+      "https://www.efactura.dgi.gub.uy/consultaQR/cfe?21\n2345670012,101,A,1234,500.00,2026-09-03,AB\r\n  C%2B123";
+    expect(parsearQR(copiado)).toEqual({ ...parsearQR(PAYLOAD), hash: "ABC+123" });
   });
 
   it("rechaza un QR que no sea de un CFE", () => {
@@ -258,5 +265,47 @@ describe("parsearComprobantePdfIjserv", () => {
     expect(() => parsearComprobantePdfIjserv("otra cosa")).toThrow(
       /formato esperado/i
     );
+  });
+});
+
+const PDF_UCFE = [
+  "Subtotal gravado (22%): 516,40 Total IVA (22%): 113,60",
+  "TOTAL A PAGAR: 630,00",
+  "Descripción Uni * P. Unitario $ Desc Rec Cantidad Importe $",
+  "Kids U 3 236,07 0,00 0,00 1 236,07",
+  "Caliente U 3 280,33 0,00 0,00 1 280,33",
+  "* 3- IVA tasa básica",
+  "Código de seguridad: vizq0E",
+].join("\n");
+
+describe("parsearItemsPdfUcfe", () => {
+  it("lee el nombre en la misma línea que la fila y suma el IVA a líneas netas", () => {
+    const items = parsearItemsPdfUcfe(PDF_UCFE);
+
+    expect(items.map((i) => i.nombre)).toEqual(["Kids", "Caliente"]);
+    expect(items.map((i) => i.precio)).toEqual([288.01, 342]);
+    expect(items.reduce((acc, i) => acc + i.precio, 0)).toBeCloseTo(630, 1);
+  });
+
+  it("no toca los importes cuando ya suman el total", () => {
+    const items = parsearItemsPdfUcfe(
+      PDF_UCFE.replace("630,00", "516,40")
+    );
+
+    expect(items.map((i) => i.precio)).toEqual([236.07, 280.33]);
+  });
+
+  it("sigue leyendo el nombre en líneas aparte", () => {
+    const items = parsearItemsPdfUcfe(
+      [
+        "TOTAL A PAGAR: 100,00",
+        "Descripción Uni * P. Unitario $ Desc Rec Cantidad Importe $",
+        "Leche entera",
+        "UN 1 50,00 0,00 0,00 2 100,00",
+      ].join("\n")
+    );
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ nombre: "Leche entera", precio: 100 });
   });
 });

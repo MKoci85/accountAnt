@@ -5,20 +5,23 @@ import {
   configDe,
   esProveedorValido,
   PROVEEDORES,
-  type ModeloCatalogo,
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
 import {
   AJUSTES,
   CLAVE_API_KEY_LEGACY,
   CLAVE_PROVEEDOR,
+  MAX_CANTIDAD_RESPALDOS,
   borrarConfig,
+  cantidadRespaldosPorDefecto,
+  leerCantidadRespaldos,
   claveApiKey,
   claveModelo,
   escribirAjuste,
   escribirCatalogoModelos,
   escribirConfig,
   escribirLimitadorActivo,
+  escribirModelosRespaldo,
   escribirRpdEfectivo,
   escribirTpmEfectivo,
   escribirUrlIA,
@@ -28,6 +31,7 @@ import {
   leerCatalogoModelos,
   leerLimitadorActivo,
   leerModeloIA,
+  leerModelosRespaldo,
   leerProveedorIA,
   leerProveedoresConKey,
   leerRpdEfectivo,
@@ -59,10 +63,16 @@ export type EstadoProveedorIA = {
   rpd: number | null;
   rpdPorDefecto: number | null;
   rpmPorDefecto: number | null;
+  respaldos: string[];
+  respaldosPorDefecto: string[];
+  cantidadRespaldos: number;
+  cantidadRespaldosPorDefecto: number;
+  maxCantidadRespaldos: number;
   catalogo: {
     modelos: string[];
     actualizadoEn: string;
     urlListado: string;
+    calificativo: string;
   } | null;
 };
 
@@ -90,6 +100,11 @@ export async function obtenerEstadoProveedoresIA(): Promise<
         rpd: await leerRpdEfectivo(id),
         rpdPorDefecto: config.rpdGratuito ?? null,
         rpmPorDefecto: config.rpmGratuito ?? null,
+        respaldos: await leerModelosRespaldo(id),
+        respaldosPorDefecto: config.modelosRespaldo ?? [],
+        cantidadRespaldos: await leerCantidadRespaldos(id),
+        cantidadRespaldosPorDefecto: cantidadRespaldosPorDefecto(id),
+        maxCantidadRespaldos: MAX_CANTIDAD_RESPALDOS,
         catalogo: config.catalogo
           ? {
               ...((await leerCatalogoModelos(id)) ?? {
@@ -97,6 +112,7 @@ export async function obtenerEstadoProveedoresIA(): Promise<
                 actualizadoEn: "",
               }),
               urlListado: config.catalogo.urlListado,
+              calificativo: config.catalogo.calificativo,
             }
           : null,
       };
@@ -183,6 +199,23 @@ export async function guardarModeloIA(proveedor: ProveedorIA, modelo: string) {
   if (valor) await escribirConfig(claveModelo(proveedor), valor);
   else await borrarConfig(claveModelo(proveedor));
 
+  revalidatePath("/ajustes");
+}
+
+/**
+ * Guarda los modelos a los que saltan las lecturas de fotos y PDF cuando el
+ * principal está saturado o ya no existe.
+ * @param proveedor Proveedor al que pertenece la lista.
+ * @param modelos Ids separados por coma; vacío vuelve al default del código.
+ */
+export async function guardarModelosRespaldoIA(
+  proveedor: ProveedorIA,
+  modelos: string,
+) {
+  if (!esProveedorValido(proveedor)) {
+    throw new Error("Proveedor de IA desconocido");
+  }
+  await escribirModelosRespaldo(proveedor, modelos);
   revalidatePath("/ajustes");
 }
 
@@ -277,8 +310,8 @@ export async function guardarUrlProveedorIA(
 }
 
 /**
- * Refresca el catálogo de modelos gratuitos de un proveedor desde su
- * endpoint público de `/models`. No consume cuota del limitador.
+ * Refresca el catálogo de modelos sugeridos de un proveedor desde su endpoint
+ * de `/models`. No consume cuota del limitador.
  * @param proveedor Proveedor cuyo catálogo actualizar.
  * @returns Si se pudo actualizar, un mensaje descriptivo y los modelos encontrados.
  */
@@ -298,10 +331,24 @@ export async function actualizarModelosProveedor(
     };
   }
 
-  let filas: ModeloCatalogo[];
+  const apiKey = catalogo.headerApiKey ? await leerApiKeyIA(proveedor) : null;
+  if (catalogo.headerApiKey && !apiKey) {
+    return {
+      ok: false,
+      mensaje: `${config.nombre} pide la API key para listar sus modelos: guardala primero.`,
+      modelos: [],
+    };
+  }
+
+  let encontrados: string[] | null;
   try {
     const r = await fetch(catalogo.url, {
-      headers: { accept: "application/json" },
+      headers: {
+        accept: "application/json",
+        ...(catalogo.headerApiKey && apiKey
+          ? { [catalogo.headerApiKey]: apiKey }
+          : {}),
+      },
       cache: "no-store",
       signal: AbortSignal.timeout(await leerAjuste("iaTimeoutMs")),
     });
@@ -312,15 +359,7 @@ export async function actualizarModelosProveedor(
         modelos: [],
       };
     }
-    const json = await r.json();
-    if (!Array.isArray(json?.data)) {
-      return {
-        ok: false,
-        mensaje: `El catálogo de ${config.nombre} vino con un formato inesperado. El modelo se puede escribir a mano igual.`,
-        modelos: [],
-      };
-    }
-    filas = json.data;
+    encontrados = catalogo.modelos(await r.json());
   } catch (e) {
     const timeout = e instanceof Error && e.name === "TimeoutError";
     return {
@@ -332,16 +371,19 @@ export async function actualizarModelosProveedor(
     };
   }
 
-  const modelos = filas
-    .filter((m) => catalogo.esGratuito(m))
-    .map((m) => m.id)
-    .filter((id): id is string => typeof id === "string" && id.length > 0)
-    .sort();
+  if (!encontrados) {
+    return {
+      ok: false,
+      mensaje: `El catálogo de ${config.nombre} vino con un formato inesperado. El modelo se puede escribir a mano igual.`,
+      modelos: [],
+    };
+  }
 
+  const modelos = [...encontrados].sort();
   if (modelos.length === 0) {
     return {
       ok: false,
-      mensaje: `${config.nombre} no está listando modelos gratuitos ahora mismo. Se dejan las sugerencias anteriores.`,
+      mensaje: `${config.nombre} no está listando modelos ${catalogo.calificativo}s ahora mismo. Se dejan las sugerencias anteriores.`,
       modelos: [],
     };
   }
@@ -349,7 +391,10 @@ export async function actualizarModelosProveedor(
   await escribirCatalogoModelos(proveedor, modelos);
   revalidatePath("/ajustes");
 
-  const plural = modelos.length === 1 ? "modelo gratuito" : "modelos gratuitos";
+  const plural =
+    modelos.length === 1
+      ? `modelo ${catalogo.calificativo}`
+      : `modelos ${catalogo.calificativo}s`;
   return {
     ok: true,
     mensaje: `${modelos.length} ${plural} de ${config.nombre}.`,

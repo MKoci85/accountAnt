@@ -1,19 +1,39 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import {
+  MAX_CANTIDAD_RESPALDOS,
+  escribirCantidadRespaldos,
+  leerAjuste,
   leerApiKeyIA,
+  leerCatalogoModelos,
   leerModeloIA,
+  leerCantidadRespaldos,
+  leerModelosRespaldo,
   leerProveedorIA,
+  leerRespaldosSinRecortar,
   leerTpmEfectivo,
 } from "@/lib/config-server";
-import { llamar, type ImagenAdjunta } from "@/lib/ia-cliente";
+import {
+  actualizarModelosProveedor,
+  guardarModeloIA,
+  guardarModelosRespaldoIA,
+} from "@/app/actions/configuracion";
+import {
+  llamar,
+  type ImagenAdjunta,
+  type RespuestaIA,
+} from "@/lib/ia-cliente";
 import {
   estadoCuota,
   mensajeEspera,
   registrarUso,
 } from "@/lib/limitador-ia";
 import {
+  cadenaDeModelos,
+  candidatosDeRespaldo,
   configDe,
+  convieneOtroModelo,
   esProveedorValido,
   estimarTokensEntrada,
   presupuestoRespuesta,
@@ -43,18 +63,182 @@ export async function probarConexionIA(override?: {
 
   const modelo = await leerModeloIA(proveedor);
 
-  await registrarUso(proveedor, modelo, 256, "test");
-
-  const r = await llamar(
-    proveedor,
-    apiKey,
-    modelo,
-    { mensajes: [{ rol: "user", contenido: "Respondé solamente: OK" }] },
-    256,
-  );
+  const r = await consultaMinima(proveedor, apiKey, modelo);
   return r.ok
     ? { ok: true, mensaje: `Conexión correcta con ${modelo}` }
     : { ok: false, mensaje: r.error };
+}
+
+const TOKENS_CONSULTA_MINIMA = 256;
+const MAX_CANDIDATOS_FALLIDOS = 3;
+
+async function consultaMinima(
+  proveedor: ProveedorIA,
+  apiKey: string,
+  modelo: string,
+  timeoutMs?: number,
+): Promise<RespuestaIA> {
+  await registrarUso(proveedor, modelo, TOKENS_CONSULTA_MINIMA, "test");
+  return llamar(
+    proveedor,
+    apiKey,
+    modelo,
+    {
+      mensajes: [{ rol: "user", contenido: "Respondé solamente: OK" }],
+      timeoutMs,
+    },
+    TOKENS_CONSULTA_MINIMA,
+  );
+}
+
+type ResultadoRespaldos = { respaldos: string[]; aviso: string | null };
+
+/**
+ * Lleva la lista de respaldos de un proveedor a la cantidad elegida. Si sobran
+ * no toca nada (la lectura ya recorta); si faltan, prueba candidatos con una
+ * consulta mínima y sólo agrega los que responden: primero el preferido, después
+ * el catálogo recién actualizado.
+ * @param proveedor Proveedor cuya lista completar.
+ * @param preferido Modelo a probar antes que el catálogo, y la posición que ocuparía.
+ * @returns Los respaldos que quedaron y, si hubo que probar modelos, qué pasó.
+ */
+async function completarRespaldos(
+  proveedor: ProveedorIA,
+  preferido?: { modelo: string; lugar: number },
+): Promise<ResultadoRespaldos> {
+  const cantidad = await leerCantidadRespaldos(proveedor);
+  const lista = await leerRespaldosSinRecortar(proveedor);
+  if (lista.length >= cantidad) {
+    return { respaldos: lista.slice(0, cantidad), aviso: null };
+  }
+
+  const faltan = (n: number) =>
+    `Quedan ${n} de ${cantidad} modelos de respaldo.`;
+  const apiKey = await leerApiKeyIA(proveedor);
+  if (!apiKey) {
+    return {
+      respaldos: lista,
+      aviso: `${faltan(lista.length)} Sin API key no se puede probar ninguno más.`,
+    };
+  }
+
+  const principal = await leerModeloIA(proveedor);
+  const timeoutMs = await leerAjuste("iaTimeoutChatMs");
+  const agregados: string[] = [];
+  const descartados: string[] = [];
+
+  if (
+    preferido &&
+    preferido.modelo !== principal &&
+    !lista.includes(preferido.modelo)
+  ) {
+    const r = await consultaMinima(
+      proveedor,
+      apiKey,
+      preferido.modelo,
+      timeoutMs,
+    );
+    if (r.ok || (r.status !== undefined && r.status >= 500)) {
+      lista.splice(Math.min(preferido.lugar, lista.length), 0, preferido.modelo);
+      agregados.push(preferido.modelo);
+    } else {
+      descartados.push(preferido.modelo);
+    }
+  }
+
+  if (lista.length < cantidad) {
+    const catalogo = await actualizarModelosProveedor(proveedor);
+    const modelos = catalogo.ok
+      ? catalogo.modelos
+      : ((await leerCatalogoModelos(proveedor))?.modelos ?? []);
+    const candidatos = candidatosDeRespaldo(modelos, principal, [
+      principal,
+      ...lista,
+      ...descartados,
+    ]);
+
+    let fallidos = 0;
+    for (const candidato of candidatos) {
+      if (lista.length >= cantidad || fallidos >= MAX_CANDIDATOS_FALLIDOS) break;
+      const r = await consultaMinima(proveedor, apiKey, candidato, timeoutMs);
+      if (r.ok) {
+        lista.push(candidato);
+        agregados.push(candidato);
+      } else {
+        descartados.push(candidato);
+        fallidos++;
+      }
+    }
+  }
+
+  if (agregados.length > 0) {
+    await guardarModelosRespaldoIA(proveedor, lista.join(", "));
+  }
+
+  const partes = [
+    agregados.length > 0 &&
+      `Se sumó como respaldo, tras una consulta de prueba: ${agregados.join(", ")}.`,
+    descartados.length > 0 &&
+      `No sirvieron como respaldo: ${descartados.join(", ")}.`,
+    lista.length < cantidad && faltan(lista.length),
+  ].filter(Boolean);
+  return { respaldos: lista, aviso: partes.join(" ") || null };
+}
+
+/**
+ * Cambia el modelo principal de un proveedor y, si con eso la lista de
+ * respaldos queda corta (el nuevo principal era uno de ellos), la completa
+ * probando primero el modelo anterior.
+ * @param proveedor Proveedor al que pertenece el modelo.
+ * @param modelo Modelo nuevo; vacío vuelve al default del código.
+ * @returns Los respaldos que quedaron y, si la lista cambió, qué pasó con ella.
+ */
+export async function cambiarModeloIA(
+  proveedor: ProveedorIA,
+  modelo: string,
+): Promise<ResultadoRespaldos> {
+  if (!esProveedorValido(proveedor)) {
+    throw new Error("Proveedor de IA desconocido");
+  }
+  const anterior = await leerModeloIA(proveedor);
+  const antes = await leerRespaldosSinRecortar(proveedor);
+  await guardarModeloIA(proveedor, modelo);
+  const principal = await leerModeloIA(proveedor);
+
+  const lugar = antes.indexOf(principal);
+  return completarRespaldos(proveedor, {
+    modelo: anterior,
+    lugar: lugar === -1 ? antes.length : lugar,
+  });
+}
+
+/**
+ * Guarda cuántos modelos de respaldo quiere el usuario para un proveedor y
+ * completa la lista si quedó corta.
+ * @param proveedor Proveedor al que aplica.
+ * @param cantidad Cantidad de respaldos; `null` vuelve al default del código.
+ * @returns Los respaldos que quedaron y, si hubo que probar modelos, qué pasó.
+ */
+export async function guardarCantidadRespaldosIA(
+  proveedor: ProveedorIA,
+  cantidad: number | null,
+): Promise<ResultadoRespaldos> {
+  if (!esProveedorValido(proveedor)) {
+    throw new Error("Proveedor de IA desconocido");
+  }
+  if (
+    cantidad !== null &&
+    (!Number.isInteger(cantidad) ||
+      cantidad < 0 ||
+      cantidad > MAX_CANTIDAD_RESPALDOS)
+  ) {
+    throw new Error(
+      `La cantidad de respaldos tiene que ser un número entre 0 y ${MAX_CANTIDAD_RESPALDOS}`,
+    );
+  }
+  await escribirCantidadRespaldos(proveedor, cantidad);
+  revalidatePath("/ajustes");
+  return completarRespaldos(proveedor);
 }
 
 export type FuenteIA =
@@ -88,6 +272,17 @@ Reglas:
 - Si el ticket no tiene fecha, usá "" (string vacío).
 - El año puede venir en 2 dígitos: asumí 20XX.
 - No redondees los importes, respetá los decimales.`;
+
+const PROMPT_EXTRACCION_LINK = `En esta foto de un ticket uruguayo hay impreso un link de consulta de DGI, con esta forma:
+https://www.efactura.dgi.gub.uy/consultaQR/cfe?RUC,tipo,serie,numero,monto,fecha,hash
+Devolvé SOLO un objeto JSON, sin texto alrededor: {"link":"..."}
+
+Reglas:
+- El link suele ocupar varios renglones: unilos en uno solo, sin espacios.
+- Transcribilo carácter por carácter, respetando mayúsculas y minúsculas. No corrijas ni completes nada.
+- Conservá los escapes tal como están impresos (%2b, %2f, %3d).
+- Si el ticket imprime aparte el RUC y el "Código de seguridad" (los primeros 6 caracteres del último campo), usalos para resolver caracteres dudosos, como 0 y O.
+- Si la foto no tiene ese link, devolvé {"link":null}.`;
 
 function extraerJSON(
   texto: string,
@@ -168,7 +363,7 @@ async function extraerConIA(
   origen: (typeof usoIA.$inferInsert)["origen"],
   proveedorElegido?: ProveedorIA,
 ): Promise<
-  | { ok: true; texto: string }
+  | { ok: true; texto: string; aviso?: string }
   | { ok: false; error: string }
 > {
   if (proveedorElegido !== undefined && !esProveedorValido(proveedorElegido)) {
@@ -182,7 +377,11 @@ async function extraerConIA(
       error: `No hay API key configurada para ${configDe(proveedor).nombre}`,
     };
   }
-  const modelo = await leerModeloIA(proveedor);
+  const principal = await leerModeloIA(proveedor);
+  const modelos = cadenaDeModelos(
+    principal,
+    await leerModelosRespaldo(proveedor),
+  );
 
   let promptFinal = prompt;
   let imagen: ImagenAdjunta | undefined;
@@ -198,45 +397,78 @@ async function extraerConIA(
     promptFinal,
     imagen !== undefined,
   );
-  const tpm = await leerTpmEfectivo(proveedor, modelo);
-  const maxTokens = presupuestoRespuesta(
-    proveedor,
-    tokensEntrada,
-    undefined,
-    tpm,
-  );
-  if (maxTokens === null) {
-    const { nombre } = configDe(proveedor);
-    return {
-      ok: false,
-      error: `La consulta no entra en la cuota por minuto de ${nombre} (${tpm} tokens). ${
-        imagen
-          ? "Las fotos cuestan un extra fijo en este proveedor: probá con otro desde el selector."
-          : "Probá con un archivo más corto o cambiá de proveedor en el selector."
-      }`,
-    };
+  let errorPrincipal: string | null = null;
+  const sinRespuesta: string[] = [];
+
+  for (const modelo of modelos) {
+    const tpm = await leerTpmEfectivo(proveedor, modelo);
+    const maxTokens = presupuestoRespuesta(
+      proveedor,
+      tokensEntrada,
+      undefined,
+      tpm,
+    );
+    if (maxTokens === null) {
+      if (errorPrincipal !== null) continue;
+      const { nombre } = configDe(proveedor);
+      return {
+        ok: false,
+        error: `La consulta no entra en la cuota por minuto de ${nombre} (${tpm} tokens). ${
+          imagen
+            ? "Las fotos cuestan un extra fijo en este proveedor: probá con otro desde el selector."
+            : "Probá con un archivo más corto o cambiá de proveedor en el selector."
+        }`,
+      };
+    }
+
+    const cuota = await estadoCuota(
+      proveedor,
+      modelo,
+      tokensEntrada + maxTokens,
+    );
+    if (cuota.esperaMs > 0) {
+      if (errorPrincipal !== null) continue;
+      return {
+        ok: false,
+        error: mensajeEspera(cuota, configDe(proveedor).nombre, modelo),
+      };
+    }
+
+    await registrarUso(proveedor, modelo, tokensEntrada + maxTokens, origen);
+
+    const r = await llamar(
+      proveedor,
+      apiKey,
+      modelo,
+      { mensajes: [{ rol: "user", contenido: promptFinal, imagen }] },
+      maxTokens,
+    );
+    if (r.ok) {
+      return {
+        ok: true,
+        texto: r.texto,
+        aviso:
+          modelo === principal
+            ? undefined
+            : `Respondió ${modelo} porque ${principal} no estaba disponible. Puede leer con menos precisión: revisá el resultado.`,
+      };
+    }
+
+    errorPrincipal ??= r.error;
+    if (!convieneOtroModelo(r.status)) {
+      return { ok: false, error: modelo === principal ? r.error : errorPrincipal };
+    }
+    sinRespuesta.push(modelo);
   }
 
-  const cuota = await estadoCuota(proveedor, modelo, tokensEntrada + maxTokens);
-  if (cuota.esperaMs > 0) {
-    return {
-      ok: false,
-      error: mensajeEspera(cuota, configDe(proveedor).nombre, modelo),
-    };
-  }
-
-  await registrarUso(proveedor, modelo, tokensEntrada + maxTokens, origen);
-
-  const r = await llamar(
-    proveedor,
-    apiKey,
-    modelo,
-    { mensajes: [{ rol: "user", contenido: promptFinal, imagen }] },
-    maxTokens,
-  );
-  if (!r.ok) return { ok: false, error: r.error };
-
-  return { ok: true, texto: r.texto };
+  const respaldos = sinRespuesta.filter((m) => m !== principal);
+  return {
+    ok: false,
+    error:
+      respaldos.length > 0
+        ? `${errorPrincipal} Tampoco respondieron los modelos de respaldo (${respaldos.join(", ")}).`
+        : (errorPrincipal ?? "El proveedor no respondió"),
+  };
 }
 
 /**
@@ -252,6 +484,7 @@ export async function interpretarEstadoCuentaConIA(
   ok: boolean;
   movimientos?: MovimientoEstadoCuenta[];
   error?: string;
+  aviso?: string;
 }> {
   const r = await extraerConIA(
     fuente,
@@ -271,7 +504,7 @@ export async function interpretarEstadoCuentaConIA(
     return { ok: false, error: "El modelo no encontró movimientos legibles" };
   }
 
-  return { ok: true, movimientos };
+  return { ok: true, movimientos, aviso: r.aviso };
 }
 
 export type TicketCrudo = {
@@ -375,7 +608,7 @@ function validarTicket(crudo: unknown): TicketCrudo | null {
 export async function interpretarTicketConIA(
   fuente: FuenteIA,
   proveedorElegido?: ProveedorIA,
-): Promise<{ ok: boolean; ticket?: TicketCrudo; error?: string }> {
+): Promise<{ ok: boolean; ticket?: TicketCrudo; error?: string; aviso?: string }> {
   const r = await extraerConIA(
     fuente,
     PROMPT_EXTRACCION_TICKET,
@@ -394,5 +627,42 @@ export async function interpretarTicketConIA(
     return { ok: false, error: "El modelo no encontró ítems legibles en el ticket" };
   }
 
-  return { ok: true, ticket };
+  return { ok: true, ticket, aviso: r.aviso };
+}
+
+/**
+ * Lee con IA el link de consulta de DGI impreso en un ticket que no trae QR.
+ * @param fuente Imagen del ticket.
+ * @param proveedorElegido Proveedor a usar solo para esta lectura; sin esto, el activo.
+ * @returns El link tal como lo transcribió el modelo, o el error si no lo encontró.
+ */
+export async function interpretarLinkCfeConIA(
+  fuente: FuenteIA,
+  proveedorElegido?: ProveedorIA,
+): Promise<{ ok: boolean; link?: string; error?: string; aviso?: string }> {
+  const r = await extraerConIA(
+    fuente,
+    PROMPT_EXTRACCION_LINK,
+    "ticket",
+    proveedorElegido,
+  );
+  if (!r.ok) return { ok: false, error: r.error };
+
+  const crudo = extraerJSON(r.texto, ["{", "}"]);
+  if (crudo === undefined) {
+    return { ok: false, error: mensajeSinJSON(r.texto) };
+  }
+
+  const link =
+    crudo && typeof crudo === "object"
+      ? (crudo as Record<string, unknown>).link
+      : null;
+  if (typeof link !== "string" || !link.trim()) {
+    return {
+      ok: false,
+      error: "La IA no encontró un link de consulta de DGI en la foto",
+    };
+  }
+
+  return { ok: true, link: link.trim(), aviso: r.aviso };
 }

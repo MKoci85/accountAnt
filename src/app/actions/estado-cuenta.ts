@@ -109,12 +109,12 @@ export async function analizarEstadoCuenta(
  * contra los gastos ya cargados.
  * @param fuente Buffer del PDF.
  * @param proveedor Proveedor de IA elegido; sin esto, el activo.
- * @returns El mismo análisis que `analizarEstadoCuenta`, más `errorIA` si la IA falló.
+ * @returns El mismo análisis que `analizarEstadoCuenta`, más `errorIA` si la IA falló y `avisoIA` si respondió un modelo de respaldo.
  */
 export async function analizarEstadoCuentaConIA(
   fuente: { buffer: ArrayBuffer },
   proveedor?: ProveedorIA
-): Promise<AnalisisEstadoCuenta & { errorIA?: string }> {
+): Promise<AnalisisEstadoCuenta & { errorIA?: string; avisoIA?: string }> {
   const entrada: FuenteIA = {
     tipo: "texto",
     texto: (await extraerFilasPdf(fuente.buffer))
@@ -127,7 +127,7 @@ export async function analizarEstadoCuentaConIA(
     return { ...ANALISIS_VACIO, errorIA: r.error ?? "La IA no pudo interpretar el PDF" };
   }
   const ordenados = [...r.movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
-  return cotejarMovimientos(ordenados);
+  return { ...(await cotejarMovimientos(ordenados)), avisoIA: r.aviso };
 }
 
 const ANALISIS_VACIO: AnalisisEstadoCuenta = {

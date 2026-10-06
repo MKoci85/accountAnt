@@ -30,7 +30,7 @@ export type RespuestaIA =
       tokensSalida?: number;
       cacheLeidos?: number;
     }
-  | { ok: false; error: string; reintentable: boolean };
+  | { ok: false; error: string; reintentable: boolean; status?: number };
 
 const ESPERA_REINTENTO_MS = 2000;
 
@@ -303,14 +303,24 @@ function contenidoAnthropic(m: MensajeIA, cachear: boolean) {
 async function errorDeRespuesta(
   r: Response,
   modelo: string,
+): Promise<{ ok: false; error: string; reintentable: boolean; status: number }> {
+  return { ...(await motivoDeRespuesta(r, modelo)), status: r.status };
+}
+
+async function motivoDeRespuesta(
+  r: Response,
+  modelo: string,
 ): Promise<{ ok: false; error: string; reintentable: boolean }> {
   if (r.status === 401 || r.status === 403) {
     return { ok: false, error: "La API key no es válida", reintentable: false };
   }
   if (r.status >= 500) {
+    const detalle = await motivoDelCuerpo(r);
     return {
       ok: false,
-      error: "El proveedor está caído o con problemas",
+      error: detalle
+        ? `El proveedor está caído o saturado (HTTP ${r.status}): ${detalle}`
+        : `El proveedor está caído o con problemas (HTTP ${r.status})`,
       reintentable: true,
     };
   }

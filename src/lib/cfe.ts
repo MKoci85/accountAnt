@@ -18,7 +18,7 @@ export type DatosQR = {
  * @returns los campos del CFE
  */
 export function parsearQR(textoQR: string): DatosQR {
-  const texto = textoQR.trim();
+  const texto = textoQR.replace(/\s+/g, "");
   const comaIndex = texto.indexOf("?");
   const datos = comaIndex >= 0 ? texto.slice(comaIndex + 1) : texto;
 
@@ -733,7 +733,9 @@ const ENCABEZADO_ITEMS_UCFE =
   /Descripci[oó]n\s+Uni\s+\*\s+P\.?\s*Unitario\s*\$?\s+Desc\s+Rec\s+Cantidad\s+Importe\s*\$?/i;
 
 const FILA_ITEM_UCFE =
-  /^(UN|KG|LT|L|GR|ML|CC)\s+\d+\s+([\d.,]+)\s+[\d.,]+\s+[\d.,]+\s+(\d+(?:[.,]\d+)?)\s+([\d.,]+)$/i;
+  /^(?:(.+?)\s+)?(UN|U|KG|LT|L|GR|ML|CC)\s+(\d)\s+([\d.,]+)\s+[\d.,]+\s+[\d.,]+\s+(\d+(?:[.,]\d+)?)\s+([\d.,]+)$/i;
+
+const TASA_IVA_POR_INDICADOR_UCFE: Record<string, number> = { "2": 10, "3": 22 };
 
 export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
   const lineas = texto
@@ -745,6 +747,7 @@ export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
   if (inicio === -1) return [];
 
   const items: ItemComprobante[] = [];
+  const tasas: number[] = [];
   let nombreAcumulado: string[] = [];
 
   for (let i = inicio + 1; i < lineas.length; i++) {
@@ -757,11 +760,13 @@ export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
       continue;
     }
 
-    const [, um, precioUnitarioCrudo, cantidadCruda, importeCrudo] = match;
+    const [, nombreEnFila, um, indicadorIva, precioUnitarioCrudo, cantidadCruda, importeCrudo] =
+      match;
     const { nombre, tamano, unidades } = parsearNombreItem(
-      nombreAcumulado.join(" ")
+      [...nombreAcumulado, nombreEnFila].filter(Boolean).join(" ")
     );
     nombreAcumulado = [];
+    tasas.push(TASA_IVA_POR_INDICADOR_UCFE[indicadorIva] ?? 0);
 
     const cantidad = Number(cantidadCruda.replace(",", "."));
     const esPeso = um.toUpperCase() === "KG" && Number.isFinite(cantidad) && cantidad > 0;
@@ -776,5 +781,14 @@ export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
     });
   }
 
-  return items;
+  const totalCrudo = texto.match(/TOTAL A PAGAR:\s*([\d.,]+)/i)?.[1];
+  const total = totalCrudo ? parsearMontoUY(totalCrudo) : null;
+  const sumaLineas = items.reduce((acc, item) => acc + item.precio, 0);
+  const lineasSinIva = total !== null && Math.abs(total - sumaLineas) > 0.05;
+  if (!lineasSinIva) return items;
+
+  return items.map((item, i) => ({
+    ...item,
+    precio: Math.round(item.precio * (1 + tasas[i] / 100) * 100) / 100,
+  }));
 }

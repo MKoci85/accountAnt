@@ -3,11 +3,139 @@ export type ProveedorIA =
 
 type FormatoIA = "anthropic" | "gemini" | "openai-compatible";
 
-export type ModeloCatalogo = {
+type ModeloCatalogo = {
   id?: unknown;
   pricing?: { prompt?: unknown };
   architecture?: { output_modalities?: unknown };
 };
+
+type ModeloGemini = {
+  name?: unknown;
+  supportedGenerationMethods?: unknown;
+};
+
+function filasDe<T>(json: unknown, campo: string): T[] | null {
+  if (!json || typeof json !== "object") return null;
+  const filas = (json as Record<string, unknown>)[campo];
+  return Array.isArray(filas) ? (filas as T[]) : null;
+}
+
+function soloIds(ids: unknown[]): string[] {
+  return ids.filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/**
+ * Modelos gratuitos de chat del listado público de OpenRouter.
+ * @param json respuesta de `/models`.
+ * @returns ids de los modelos gratuitos que sólo emiten texto, o `null` si el formato no es el esperado.
+ */
+export function modelosGratuitosOpenRouter(json: unknown): string[] | null {
+  const filas = filasDe<ModeloCatalogo>(json, "data");
+  if (!filas) return null;
+  return soloIds(
+    filas
+      .filter((m) => {
+        if (m?.pricing?.prompt !== "0") return false;
+        const salidas = m.architecture?.output_modalities;
+        if (!Array.isArray(salidas)) return true;
+        return salidas.length === 1 && salidas[0] === "text";
+      })
+      .map((m) => m.id),
+  );
+}
+
+const GEMINI_NO_CONVERSACIONAL =
+  /tts|image|audio|live|embedding|robotics|computer-use|transcribe/;
+
+/**
+ * Modelos de Gemini que sirven para leer texto e imágenes, del listado de la API.
+ * @param json respuesta de `/models`.
+ * @returns ids sin el prefijo `models/`, o `null` si el formato no es el esperado.
+ */
+export function modelosDeGemini(json: unknown): string[] | null {
+  const filas = filasDe<ModeloGemini>(json, "models");
+  if (!filas) return null;
+  return soloIds(
+    filas
+      .filter(
+        (m) =>
+          Array.isArray(m?.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes("generateContent"),
+      )
+      .map((m) =>
+        typeof m.name === "string" ? m.name.replace(/^models\//, "") : "",
+      ),
+  ).filter(
+    (id) => id.startsWith("gemini-") && !GEMINI_NO_CONVERSACIONAL.test(id),
+  );
+}
+
+/**
+ * Separa la lista de modelos de respaldo que el usuario escribe en Ajustes.
+ * @param texto ids separados por coma, espacio o salto de línea.
+ * @returns los ids, sin repetidos y en el orden escrito.
+ */
+export function parsearModelosRespaldo(texto: string): string[] {
+  return [...new Set(texto.split(/[\s,;]+/).filter(Boolean))];
+}
+
+/**
+ * Orden en que se prueban los modelos de una lectura.
+ * @param principal modelo configurado.
+ * @param respaldos modelos a los que saltar si el principal no está disponible.
+ * @returns el principal seguido de los respaldos, sin repetidos.
+ */
+export function cadenaDeModelos(
+  principal: string,
+  respaldos: string[],
+): string[] {
+  return [...new Set([principal, ...respaldos])];
+}
+
+/**
+ * Respaldos que efectivamente quedan cuando uno de ellos pasa a ser el modelo principal.
+ * @param principal modelo configurado.
+ * @param respaldos lista guardada o por defecto.
+ * @returns los respaldos sin el principal ni repetidos, en el mismo orden.
+ */
+export function respaldosSinPrincipal(
+  principal: string,
+  respaldos: string[],
+): string[] {
+  return cadenaDeModelos(principal, respaldos).slice(1);
+}
+
+/**
+ * Orden en que conviene probar el catálogo para cubrir un respaldo que quedó vacante.
+ * @param catalogo ids sugeridos del proveedor.
+ * @param referencia modelo que ocupaba el lugar a cubrir.
+ * @param excluidos modelos que no pueden ocuparlo (el principal, los respaldos que quedan, los ya descartados).
+ * @returns los candidatos, primero los que más partes del nombre comparten con la referencia.
+ */
+export function candidatosDeRespaldo(
+  catalogo: string[],
+  referencia: string,
+  excluidos: string[],
+): string[] {
+  const partes = (modelo: string) =>
+    modelo.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const deReferencia = new Set(partes(referencia));
+  const parecido = (modelo: string) =>
+    partes(modelo).filter((p) => deReferencia.has(p)).length;
+
+  return [...new Set(catalogo)]
+    .filter((m) => !excluidos.includes(m))
+    .sort((a, b) => parecido(b) - parecido(a));
+}
+
+/**
+ * Si el fallo es del modelo y no del pedido: saturado o caído (5xx), o retirado (404).
+ * @param status código HTTP del proveedor; `undefined` si no llegó a responder.
+ * @returns si vale la pena repetir el pedido con otro modelo.
+ */
+export function convieneOtroModelo(status: number | undefined): boolean {
+  return status !== undefined && (status >= 500 || status === 404);
+}
 
 export type ConfigProveedor = {
   id: ProveedorIA;
@@ -27,10 +155,13 @@ export type ConfigProveedor = {
   soportaCache?: boolean;
   avisoChat?: string;
   avisoPrivacidad?: string;
+  modelosRespaldo?: string[];
   catalogo?: {
     url: string;
     urlListado: string;
-    esGratuito: (modelo: ModeloCatalogo) => boolean;
+    headerApiKey?: string;
+    calificativo: "gratuito" | "disponible";
+    modelos: (json: unknown) => string[] | null;
   };
   urlKeys?: string;
 };
@@ -56,6 +187,14 @@ export const PROVEEDORES: ConfigProveedor[] = [
     tpmGratuito: 250_000,
     maxTokensChat: 4096,
     nivelRazonamiento: "low",
+    modelosRespaldo: ["gemini-3.8-flash", "gemini-3.5-flash-lite"],
+    catalogo: {
+      url: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+      urlListado: "https://ai.google.dev/gemini-api/docs/models",
+      headerApiKey: "x-goog-api-key",
+      calificativo: "disponible",
+      modelos: modelosDeGemini,
+    },
     avisoPrivacidad:
       "En el free tier de Gemini, Google usa el contenido para entrenar y revisores humanos pueden leerlo. Para un estado de cuenta conviene un proveedor de tier pago.",
     avisoChat:
@@ -102,12 +241,8 @@ export const PROVEEDORES: ConfigProveedor[] = [
     catalogo: {
       url: "https://openrouter.ai/api/v1/models",
       urlListado: "https://openrouter.ai/models?max_price=0",
-      esGratuito: (m) => {
-        if (m.pricing?.prompt !== "0") return false;
-        const salidas = m.architecture?.output_modalities;
-        if (!Array.isArray(salidas)) return true;
-        return salidas.length === 1 && salidas[0] === "text";
-      },
+      calificativo: "gratuito",
+      modelos: modelosGratuitosOpenRouter,
     },
     urlKeys: "https://openrouter.ai/keys",
   },

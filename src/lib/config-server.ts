@@ -4,6 +4,8 @@ import { eq, like, sql } from "drizzle-orm";
 import {
   configDe,
   esProveedorValido,
+  parsearModelosRespaldo,
+  respaldosSinPrincipal,
   PROVEEDOR_POR_DEFECTO,
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
@@ -91,6 +93,74 @@ export async function leerModeloIA(proveedor: ProveedorIA): Promise<string> {
   return (
     (await leerConfig(claveModelo(proveedor))) ?? configDe(proveedor).modelo
   );
+}
+
+function claveRespaldo(proveedor: ProveedorIA) {
+  return `ia_respaldo_${proveedor}`;
+}
+
+function claveCantidadRespaldos(proveedor: ProveedorIA) {
+  return `ia_cantidad_respaldos_${proveedor}`;
+}
+
+export const MAX_CANTIDAD_RESPALDOS = 5;
+
+export function cantidadRespaldosPorDefecto(proveedor: ProveedorIA): number {
+  return configDe(proveedor).modelosRespaldo?.length ?? 0;
+}
+
+export async function leerCantidadRespaldos(
+  proveedor: ProveedorIA,
+): Promise<number> {
+  const valor = await leerConfig(claveCantidadRespaldos(proveedor));
+  const n = valor === null || valor === "" ? NaN : Number(valor);
+  return Number.isInteger(n) && n >= 0 && n <= MAX_CANTIDAD_RESPALDOS
+    ? n
+    : cantidadRespaldosPorDefecto(proveedor);
+}
+
+export async function escribirCantidadRespaldos(
+  proveedor: ProveedorIA,
+  cantidad: number | null,
+) {
+  const clave = claveCantidadRespaldos(proveedor);
+  if (cantidad === null) await borrarConfig(clave);
+  else await escribirConfig(clave, String(cantidad));
+}
+
+/**
+ * Respaldos guardados (o los del código) sin el modelo principal, antes de
+ * recortarlos a la cantidad elegida.
+ */
+export async function leerRespaldosSinRecortar(
+  proveedor: ProveedorIA,
+): Promise<string[]> {
+  const propios = await leerConfig(claveRespaldo(proveedor));
+  const respaldos = propios
+    ? parsearModelosRespaldo(propios)
+    : (configDe(proveedor).modelosRespaldo ?? []);
+  return respaldosSinPrincipal(await leerModeloIA(proveedor), respaldos);
+}
+
+export async function leerModelosRespaldo(
+  proveedor: ProveedorIA,
+): Promise<string[]> {
+  return (await leerRespaldosSinRecortar(proveedor)).slice(
+    0,
+    await leerCantidadRespaldos(proveedor),
+  );
+}
+
+export async function escribirModelosRespaldo(
+  proveedor: ProveedorIA,
+  texto: string,
+) {
+  const modelos = parsearModelosRespaldo(texto);
+  if (modelos.length) {
+    await escribirConfig(claveRespaldo(proveedor), modelos.join(", "));
+  } else {
+    await borrarConfig(claveRespaldo(proveedor));
+  }
 }
 
 export const CLAVE_LIMITADOR = "ia_limitador_activo";

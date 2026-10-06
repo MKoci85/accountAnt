@@ -24,6 +24,7 @@ export function LectorTicketIA({
   const [analizando, setAnalizando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resumen, setResumen] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [proveedorIA, setProveedorIA] = useState<ProveedorIA>(
     proveedoresIA.some((p) => p.id === proveedorActivoIA)
@@ -36,6 +37,7 @@ export function LectorTicketIA({
   async function analizar(obtenerImagen: () => Promise<ImagenParaIA>) {
     setError(null);
     setResumen(null);
+    setAviso(null);
     setAnalizando(true);
     try {
       const r = await interpretarTicket(
@@ -51,6 +53,7 @@ export function LectorTicketIA({
           r.ticket.comercio ? ` · ${r.ticket.comercio}` : ""
         }`,
       );
+      setAviso(r.aviso ?? null);
       onResuelto(r.ticket);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo leer la foto");
@@ -187,6 +190,7 @@ export function LectorTicketIA({
         </p>
       )}
       {resumen && <p className="mt-2.5 text-xs text-primary">{resumen}</p>}
+      {aviso && <p className="mt-1.5 text-xs text-muted-foreground">{aviso}</p>}
     </Card>
   );
 }

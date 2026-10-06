@@ -41,7 +41,6 @@ export type ItemTicket = {
 export type ResultadoConsultaCFE = {
   datosQR: DatosQR;
   fechaISO: string;
-  dgiValido: boolean;
   dgiMensaje: string;
   emisor: Emisor;
   emisorEsNuevo: boolean;
@@ -53,26 +52,45 @@ export type ResultadoConsultaCFE = {
   avisoMoneda: string | null;
 };
 
+export type RespuestaConsultaCFE =
+  | { ok: true; resultado: ResultadoConsultaCFE }
+  | { ok: false; error: string };
+
 /**
- * Orquesta la lectura de un QR de CFE: valida contra DGI, matchea o crea el
- * emisor por RUC, y si el emisor ya tiene un proveedor de CFE mapeado, trae el
- * detalle (ítems, total).
+ * Orquesta la lectura de un QR de CFE (o del link impreso equivalente): valida
+ * contra DGI, matchea o crea el emisor por RUC, y si el emisor ya tiene un
+ * proveedor de CFE mapeado, trae el detalle (ítems, total). Un comprobante que
+ * DGI no confirma corta acá, antes de escribir nada.
  * @param qrTexto Contenido crudo del QR escaneado.
- * @returns Datos del QR, validación DGI, emisor y detalle del comprobante si se pudo consultar.
+ * @returns Emisor y detalle del comprobante, o el motivo por el que no se pudo validar.
  */
-export async function consultarCFE(qrTexto: string): Promise<ResultadoConsultaCFE> {
-  const datosQR = parsearQR(qrTexto);
+export async function consultarCFE(qrTexto: string): Promise<RespuestaConsultaCFE> {
+  let datosQR: DatosQR;
+  try {
+    datosQR = parsearQR(qrTexto);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "No se pudo leer el QR",
+    };
+  }
 
-  const [validacion, emisorExistente] = await Promise.all([
-    validarConDgi(datosQR).catch(
-      (): { valido: boolean; mensaje: string } => ({
-        valido: false,
-        mensaje: "No se pudo consultar a DGI",
-      })
-    ),
-    obtenerEmisorPorRuc(datosQR.ruc),
-  ]);
+  const validacion = await validarConDgi(datosQR).catch(() => null);
+  if (!validacion) {
+    return {
+      ok: false,
+      error:
+        "No se pudo consultar a DGI para validar el comprobante. Probá de nuevo en un momento, o cargá el gasto a mano en el formulario.",
+    };
+  }
+  if (!validacion.valido) {
+    return {
+      ok: false,
+      error: `DGI no reconoce este comprobante: ${validacion.mensaje}`,
+    };
+  }
 
+  const emisorExistente = await obtenerEmisorPorRuc(datosQR.ruc);
   const emisor =
     emisorExistente ??
     (await crearEmisorPorRuc({ ruc: datosQR.ruc, nombre: `RUC ${datosQR.ruc}` }));
@@ -119,18 +137,20 @@ export async function consultarCFE(qrTexto: string): Promise<ResultadoConsultaCF
   );
 
   return {
-    datosQR,
-    fechaISO: fechaISODesdeQR(datosQR.fecha),
-    dgiValido: validacion.valido,
-    dgiMensaje: validacion.mensaje,
-    emisor,
-    emisorEsNuevo: !emisorExistente,
-    items,
-    total: detalle?.total ?? null,
-    errorProveedor,
-    monedaOriginal,
-    totalMonedaOriginal,
-    avisoMoneda,
+    ok: true,
+    resultado: {
+      datosQR,
+      fechaISO: fechaISODesdeQR(datosQR.fecha),
+      dgiMensaje: validacion.mensaje,
+      emisor,
+      emisorEsNuevo: !emisorExistente,
+      items,
+      total: detalle?.total ?? null,
+      errorProveedor,
+      monedaOriginal,
+      totalMonedaOriginal,
+      avisoMoneda,
+    },
   };
 }
 
@@ -214,13 +234,18 @@ export type ResultadoTicketIA = {
 export async function interpretarTicket(
   fuente: FuenteIA,
   proveedor?: ProveedorIA
-): Promise<{ ok: boolean; ticket?: ResultadoTicketIA; error?: string }> {
+): Promise<{
+  ok: boolean;
+  ticket?: ResultadoTicketIA;
+  error?: string;
+  aviso?: string;
+}> {
   const r = await interpretarTicketConIA(fuente, proveedor);
   if (!r.ok || !r.ticket) {
     return { ok: false, error: r.error ?? "La IA no pudo interpretar el ticket" };
   }
 
-  return { ok: true, ticket: await resolverTicket(r.ticket) };
+  return { ok: true, ticket: await resolverTicket(r.ticket), aviso: r.aviso };
 }
 
 async function resolverTicket(ticket: TicketCrudo): Promise<ResultadoTicketIA> {

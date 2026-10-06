@@ -19,6 +19,7 @@ import {
   borrarApiKeyIA,
   guardarLimitadorIA,
   guardarModeloIA,
+  guardarModelosRespaldoIA,
   guardarProveedorActivoIA,
   guardarRpdIA,
   guardarTpmIA,
@@ -26,8 +27,18 @@ import {
   actualizarModelosProveedor,
   type EstadoProveedorIA,
 } from "@/app/actions/configuracion";
-import { PROVEEDORES, configDe, type ProveedorIA } from "@/lib/proveedores-ia";
-import { probarConexionIA } from "@/app/actions/ia";
+import {
+  PROVEEDORES,
+  configDe,
+  parsearModelosRespaldo,
+  respaldosSinPrincipal,
+  type ProveedorIA,
+} from "@/lib/proveedores-ia";
+import {
+  cambiarModeloIA,
+  guardarCantidadRespaldosIA,
+  probarConexionIA,
+} from "@/app/actions/ia";
 import { EsperandoIA, BloqueoIA } from "@/components/esperando-ia";
 
 type Mensaje = { ok: boolean; texto: string };
@@ -202,10 +213,21 @@ function FilaProveedor({
   const config = configDe(estado.proveedor);
   const [apiKey, setApiKey] = useState("");
   const [modelo, setModelo] = useState(estado.modelo);
+  const [respaldos, setRespaldos] = useState(estado.respaldos.join(", "));
+  const [respaldosGuardados, setRespaldosGuardados] = useState(respaldos);
+  const [cantidad, setCantidad] = useState(String(estado.cantidadRespaldos));
+  const [cantidadGuardada, setCantidadGuardada] = useState(
+    estado.cantidadRespaldos,
+  );
   const [url, setUrl] = useState(estado.url || estado.urlPorDefecto);
   const [tpm, setTpm] = useState(estado.tpm ? String(estado.tpm) : "");
   const [rpd, setRpd] = useState(estado.rpd ? String(estado.rpd) : "");
   const [mensaje, setMensaje] = useState<Mensaje | null>(null);
+  const modeloEfectivo = modelo.trim() || estado.modeloPorDefecto;
+  const respaldosPorDefecto = respaldosSinPrincipal(
+    modeloEfectivo,
+    estado.respaldosPorDefecto,
+  ).join(", ");
   const [guardando, startGuardado] = useTransition();
   const [probando, startPrueba] = useTransition();
   const [modelosSugeridos, setModelosSugeridos] = useState(
@@ -235,8 +257,57 @@ function FilaProveedor({
       try {
         const key = apiKey.trim();
         if (key) await guardarApiKeyIA(estado.proveedor, key);
-        if (modelo.trim() !== estado.modelo) {
-          await guardarModeloIA(estado.proveedor, modelo);
+        const mostrarRespaldos = (texto: string) => {
+          setRespaldos(texto);
+          setRespaldosGuardados(texto);
+        };
+        const cantidadEscrita = cantidad.trim()
+          ? Number(cantidad)
+          : estado.cantidadRespaldosPorDefecto;
+        let cantidadNueva =
+          cantidadEscrita !== cantidadGuardada ? cantidadEscrita : null;
+        let avisoRespaldo: string | null = null;
+        if (respaldos.trim() !== respaldosGuardados) {
+          if (modelo.trim() !== estado.modelo) {
+            await guardarModeloIA(estado.proveedor, modelo);
+          }
+          const respaldosLimpios = respaldosSinPrincipal(
+            modeloEfectivo,
+            parsearModelosRespaldo(respaldos),
+          );
+          await guardarModelosRespaldoIA(
+            estado.proveedor,
+            respaldosLimpios.join(", "),
+          );
+          mostrarRespaldos(
+            respaldos.trim() ? respaldosLimpios.join(", ") : respaldosPorDefecto,
+          );
+          if (
+            cantidadNueva === null &&
+            respaldosLimpios.length > 0 &&
+            respaldosLimpios.length !== cantidadGuardada
+          ) {
+            cantidadNueva = Math.min(
+              respaldosLimpios.length,
+              estado.maxCantidadRespaldos,
+            );
+          }
+        } else if (modelo.trim() !== estado.modelo) {
+          const r = await cambiarModeloIA(estado.proveedor, modelo);
+          avisoRespaldo = r.aviso;
+          mostrarRespaldos(r.respaldos.join(", "));
+        }
+        if (cantidadNueva !== null) {
+          const r = await guardarCantidadRespaldosIA(
+            estado.proveedor,
+            cantidad.trim() || cantidadNueva !== cantidadEscrita
+              ? cantidadNueva
+              : null,
+          );
+          avisoRespaldo = [avisoRespaldo, r.aviso].filter(Boolean).join(" ");
+          mostrarRespaldos(r.respaldos.join(", "));
+          setCantidad(String(cantidadNueva));
+          setCantidadGuardada(cantidadNueva);
         }
         if (url.trim() !== (estado.url || estado.urlPorDefecto)) {
           await guardarUrlProveedorIA(estado.proveedor, url);
@@ -255,7 +326,12 @@ function FilaProveedor({
         setApiKey("");
         setMensaje({
           ok: true,
-          texto: key ? "Key y ajustes guardados." : "Cambios guardados.",
+          texto: [
+            key ? "Key y ajustes guardados." : "Cambios guardados.",
+            avisoRespaldo,
+          ]
+            .filter(Boolean)
+            .join(" "),
         });
       } catch (e) {
         setMensaje({
@@ -389,7 +465,7 @@ function FilaProveedor({
               </a>
               <span className="text-[11.5px] text-muted-foreground">
                 {modelosSugeridos.length > 0
-                  ? `${modelosSugeridos.length} gratuitos · ${formatearActualizado(actualizadoEn)}`
+                  ? `${modelosSugeridos.length} ${estado.catalogo.calificativo}s · ${formatearActualizado(actualizadoEn)}`
                   : "sin sugerencias todavía"}
               </span>
             </div>
@@ -420,6 +496,53 @@ function FilaProveedor({
               el campo y guardá para volver a él.
             </p>
           )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11.5px] text-muted-foreground">
+            Cantidad de respaldos
+          </label>
+          <Input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={estado.maxCantidadRespaldos}
+            step={1}
+            value={cantidad}
+            onChange={(e) => setCantidad(e.target.value)}
+            placeholder={String(estado.cantidadRespaldosPorDefecto)}
+            className="text-[13px] tabular-nums"
+          />
+          <p className="text-[11.5px] text-muted-foreground">
+            De 0 a {estado.maxCantidadRespaldos}. Si faltan, al guardar se
+            prueban modelos del catálogo y se suman los que responden. Default:{" "}
+            {estado.cantidadRespaldosPorDefecto}.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <label className="text-[11.5px] text-muted-foreground">
+            Modelos de respaldo
+          </label>
+          <Input
+            value={respaldos}
+            onChange={(e) => setRespaldos(e.target.value)}
+            placeholder="Ninguno"
+            spellCheck={false}
+            autoComplete="off"
+            className="font-mono text-[12px]"
+          />
+          <p className="text-[11.5px] text-muted-foreground">
+            Separados por coma, en el orden en que se prueban. Las lecturas de
+            fotos y PDF saltan a ellos cuando el modelo de arriba está saturado
+            o ya no existe; el chat no.
+            {respaldosPorDefecto && (
+              <>
+                {" "}
+                Default:{" "}
+                <span className="font-mono">{respaldosPorDefecto}</span>{" "}
+                — vaciá el campo y guardá para volver a él.
+              </>
+            )}
+          </p>
         </div>
       </div>
 

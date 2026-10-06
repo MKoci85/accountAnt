@@ -90,6 +90,7 @@ export function EstadoCuentaView({
   const [analisis, setAnalisis] = useState<AnalisisEstadoCuenta | null>(null);
   const [lineas, setLineas] = useState<LineaEditable[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [avisoIA, setAvisoIA] = useState<string | null>(null);
   const importadosURL = Number(useSearchParams().get("importados"));
   const [resultado, setResultado] = useState<string | null>(
     Number.isInteger(importadosURL) && importadosURL > 0
@@ -115,6 +116,7 @@ export function EstadoCuentaView({
     if (!file) return;
 
     setError(null);
+    setAvisoIA(null);
     setResultado(null);
     setAnalizando(true);
     try {
@@ -128,7 +130,10 @@ export function EstadoCuentaView({
 
       const conIA = usarIA && hayApiKeyIA;
       setAnalizadoConIA(conIA);
-      let resultado: AnalisisEstadoCuenta & { errorIA?: string };
+      let resultado: AnalisisEstadoCuenta & {
+        errorIA?: string;
+        avisoIA?: string;
+      };
 
       if (conIA) {
         resultado = await analizarEstadoCuentaConIA(
@@ -141,6 +146,7 @@ export function EstadoCuentaView({
           setAnalisis(null);
           return;
         }
+        setAvisoIA(resultado.avisoIA ?? null);
       } else {
         resultado = await analizarEstadoCuenta(await file.arrayBuffer());
       }
@@ -347,6 +353,9 @@ export function EstadoCuentaView({
           </div>
         )}
         {error && <p className="mt-2.5 text-xs text-destructive">{error}</p>}
+        {avisoIA && (
+          <p className="mt-2.5 text-xs text-muted-foreground">{avisoIA}</p>
+        )}
         {resultado && (
           <p className="mt-2.5 flex items-center gap-1.5 text-xs text-primary">
             <CheckCircle2 className="h-3.5 w-3.5" />
