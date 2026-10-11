@@ -46,6 +46,14 @@ export function ConfiguracionEndpointsDialog({
           onGuardar={(v) => guardarAjuste("dgiUrl", v)}
         />
         <CampoNumero
+          etiqueta="Timeout de DGI y los proveedores de CFE"
+          sufijo="ms"
+          valor={inicial.cfeTimeoutMs.valor}
+          porDefecto={inicial.cfeTimeoutMs.porDefecto}
+          ayuda="Cuánto se espera cada consulta al escanear un comprobante. Al vencerse la de DGI, el comprobante no se valida; al vencerse la del proveedor, queda sin el detalle de ítems y se puede completar a mano."
+          onGuardar={(v) => guardarAjuste("cfeTimeoutMs", v)}
+        />
+        <CampoNumero
           etiqueta="Timeout de las consultas con IA"
           sufijo="ms"
           valor={inicial.iaTimeoutMs.valor}

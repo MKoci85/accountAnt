@@ -110,6 +110,9 @@ export async function consultarCFE(qrTexto: string): Promise<RespuestaConsultaCF
   if (urlConsulta && formato) {
     try {
       detalle = await consultarProcesador(urlConsulta, datosQR, formato);
+      if (detalle.total !== null && !Number.isFinite(detalle.total)) {
+        detalle = { ...detalle, total: null };
+      }
       if (detalle.moneda && detalle.moneda !== "UYU") {
         monedaOriginal = detalle.moneda;
         totalMonedaOriginal = detalle.total;

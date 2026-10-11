@@ -9,6 +9,7 @@ import {
   guardarCampoWhatsapp,
   guardarRespuestaWhatsapp,
   probarWhatsapp,
+  reintentarMensajesWhatsapp,
   type EstadoWhatsapp,
 } from "@/app/actions/whatsapp";
 import type { ModoRespuesta } from "@/lib/whatsapp";
@@ -205,6 +206,29 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
             ? `Último mensaje recibido: ${new Date(inicial.ultimoMensaje.recibidoEn).toLocaleString("es-UY")} — ${inicial.ultimoMensaje.resultado ?? "procesando"}.`
             : "Todavía no llegó ningún mensaje."}
         </p>
+        {inicial.interrumpidos > 0 && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3.5 py-3">
+            <p className="min-w-0 flex-1 text-[12.5px]">
+              {inicial.interrumpidos === 1
+                ? "Hay 1 mensaje que quedó a medio procesar"
+                : `Hay ${inicial.interrumpidos} mensajes que quedaron a medio procesar`}{" "}
+              (la app se reinició mientras lo leía).
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={ocupado}
+              onClick={() => {
+                setPrueba(null);
+                startTransition(async () =>
+                  setPrueba(await reintentarMensajesWhatsapp())
+                );
+              }}
+            >
+              Reintentar
+            </Button>
+          </div>
+        )}
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
     </SeccionColapsable>

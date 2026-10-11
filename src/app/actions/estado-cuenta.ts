@@ -20,6 +20,7 @@ import { revalidatePath } from "next/cache";
 import { extraerFilasPdf } from "@/lib/pdf";
 import {
   parsearEstadoCuenta,
+  separarDescuentos,
   type MovimientoEstadoCuenta,
 } from "@/lib/estado-cuenta";
 import {
@@ -70,11 +71,24 @@ export type AnalisisEstadoCuenta = {
   hasta: string | null;
   gastosEnRango: number;
   /**
+   * Los importes negativos del resumen (reducción de IVA, bonificaciones,
+   * devoluciones), sólo como suma: no son líneas a revisar ni se importan.
+   */
+  descuentos: DescuentosEstadoCuenta;
+  /**
    * Comprobantes de la bandeja que podrían ser alguno de estos movimientos.
    * Mientras haya alguno la importación no sigue: los movimientos quedan en
    * borrador hasta que se confirmen o descarten.
    */
   conflictosBandeja: ConflictoConBandeja[];
+};
+
+export type DescuentosEstadoCuenta = {
+  cantidad: number;
+  /** En pesos, con los de USD convertidos a la cotización de su fecha. */
+  pesos: number;
+  /** Los de USD para los que el BCU no dio cotización: quedan sin convertir. */
+  usdSinCotizacion: number;
 };
 
 export type ConflictoConBandeja = {
@@ -236,13 +250,38 @@ const ANALISIS_VACIO: AnalisisEstadoCuenta = {
   desde: null,
   hasta: null,
   gastosEnRango: 0,
+  descuentos: { cantidad: 0, pesos: 0, usdSinCotizacion: 0 },
   conflictosBandeja: [],
 };
 
+async function sumarDescuentos(
+  descuentos: MovimientoEstadoCuenta[]
+): Promise<DescuentosEstadoCuenta> {
+  let pesos = 0;
+  let usdSinCotizacion = 0;
+  for (const d of descuentos) {
+    const monto = Math.abs(d.monto);
+    if (d.moneda === "UYU") {
+      pesos += monto;
+      continue;
+    }
+    const cotizacion = await obtenerCotizacionCacheada(d.fecha);
+    if (cotizacion === null) usdSinCotizacion += monto;
+    else pesos += monto * cotizacion;
+  }
+  return {
+    cantidad: descuentos.length,
+    pesos: Number(pesos.toFixed(2)),
+    usdSinCotizacion: Number(usdSinCotizacion.toFixed(2)),
+  };
+}
+
 async function cotejarMovimientos(
-  movimientos: MovimientoEstadoCuenta[]
+  todos: MovimientoEstadoCuenta[]
 ): Promise<AnalisisEstadoCuenta> {
-  if (!movimientos.length) return ANALISIS_VACIO;
+  const { compras: movimientos, descuentos: negativos } = separarDescuentos(todos);
+  const descuentos = await sumarDescuentos(negativos);
+  if (!movimientos.length) return { ...ANALISIS_VACIO, descuentos };
 
   const fechas = movimientos.map((m) => m.fecha).sort();
   const desde = fechas[0];
@@ -299,6 +338,7 @@ async function cotejarMovimientos(
     desde,
     hasta,
     gastosEnRango: candidatos.length,
+    descuentos,
     conflictosBandeja: await conflictosConBandeja(lineas, emisorPorId),
   };
 }

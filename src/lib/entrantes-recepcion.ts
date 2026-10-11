@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { categorias, emisores, gastos, gastosEntrantes } from "@/db/schema";
 import { montoDesdeQR, parsearQR } from "@/lib/cfe";
 import { leerAjustesBandeja } from "@/lib/config-server";
+import { esFechaISOValida } from "@/lib/formato";
 import {
   claveComprobante,
   motivoDeRevision,
@@ -200,9 +201,7 @@ async function leerImagen(imagen: Buffer): Promise<Lectura> {
     estado: "pendiente",
     lectura: "ticket",
     comercio: ticket.ticket.comercio || null,
-    fecha: /^\d{4}-\d{2}-\d{2}$/.test(ticket.ticket.fecha)
-      ? ticket.ticket.fecha
-      : null,
+    fecha: esFechaISOValida(ticket.ticket.fecha) ? ticket.ticket.fecha : null,
     itemsJson: itemsCrudos(ticket.ticket.items),
     aviso: unirAvisos(
       ticket.aviso,
@@ -255,6 +254,7 @@ async function comprobanteRepetido(
       .where(
         and(
           eq(gastos.emisorId, lectura.emisorId),
+          eq(gastos.tipoCfe, datos.tipoCfe),
           eq(gastos.serie, datos.serie),
           eq(gastos.numero, datos.numero)
         )

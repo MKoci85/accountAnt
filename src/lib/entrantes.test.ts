@@ -156,6 +156,16 @@ describe("motivoDeRevision", () => {
       motivoDeRevision({ ...limpio, lineas: [{ ...linea, precio: 0 }] })
     ).toMatch(/sin precio/);
   });
+
+  it("un total o un precio que no es un número nunca pasa por bueno", () => {
+    expect(motivoDeRevision({ ...limpio, total: NaN })).toMatch(/total/);
+    expect(
+      motivoDeRevision({ ...limpio, lineas: [{ ...linea, precio: NaN }] })
+    ).toMatch(/sin precio/);
+    expect(
+      motivoDeRevision({ ...limpio, lineas: [{ ...linea, cantidad: NaN }] })
+    ).toMatch(/sin precio/);
+  });
 });
 
 describe("entrantesEnConflicto", () => {

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { esFechaISOValida } from "@/lib/formato";
 import {
   MAX_CANTIDAD_RESPALDOS,
   escribirCantidadRespaldos,
@@ -40,7 +41,10 @@ import {
   type ProveedorIA,
 } from "@/lib/proveedores-ia";
 import { redactarDatosPersonales } from "@/lib/pdf";
-import type { MovimientoEstadoCuenta } from "@/lib/estado-cuenta";
+import {
+  esNoConsumo,
+  type MovimientoEstadoCuenta,
+} from "@/lib/estado-cuenta";
 import type { usoIA } from "@/db/schema";
 
 export type { ImagenAdjunta };
@@ -250,7 +254,8 @@ Devolvé SOLO un array JSON, sin texto alrededor, con objetos:
 {"fecha":"YYYY-MM-DD","descripcion":"...","monto":1234.56,"moneda":"UYU"|"USD"}
 
 Reglas:
-- Ignorá saldos, pagos, seguros y totales: solo compras.
+- Incluí las compras y también los descuentos, bonificaciones y devoluciones (por ejemplo la reducción de IVA por pagar con tarjeta): esos van con el monto en NEGATIVO.
+- Ignorá saldos, pagos de la tarjeta, seguros y totales.
 - El año viene en 2 dígitos: asumí 20XX.
 - No redondees los montos, respetá los decimales.
 - Si no podés determinar la moneda, usá UYU.`;
@@ -331,7 +336,7 @@ function validarMovimientos(crudo: unknown): MovimientoEstadoCuenta[] | null {
     const o = item as Record<string, unknown>;
 
     const fecha = typeof o.fecha === "string" ? o.fecha : "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue;
+    if (!esFechaISOValida(fecha)) continue;
 
     const monto =
       typeof o.monto === "number"
@@ -341,10 +346,14 @@ function validarMovimientos(crudo: unknown): MovimientoEstadoCuenta[] | null {
               .replace(/\./g, "")
               .replace(",", "."),
           );
-    if (!Number.isFinite(monto) || monto <= 0) continue;
+    if (!Number.isFinite(monto) || monto === 0) continue;
 
     const descripcion = String(o.descripcion ?? "").trim();
     if (!descripcion) continue;
+    // Un negativo es un descuento, salvo que sea el pago de la tarjeta: el
+    // prompt pide ignorarlo, pero si el modelo lo deja pasar se contaría como
+    // descuento.
+    if (monto < 0 && esNoConsumo(descripcion)) continue;
 
     movimientos.push({
       fecha,
@@ -594,7 +603,7 @@ function validarTicket(crudo: unknown): TicketCrudo | null {
   const fecha = typeof o.fecha === "string" ? o.fecha : "";
   return {
     comercio: String(o.comercio ?? "").trim(),
-    fecha: /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : "",
+    fecha: esFechaISOValida(fecha) ? fecha : "",
     items,
   };
 }

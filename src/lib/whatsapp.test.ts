@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   firmaValida,
+  interrupcionDe,
+  marcaDeReintento,
   mensajesDeWebhook,
   normalizarNumero,
   parsearNumeros,
@@ -127,5 +129,42 @@ describe("textoRespuesta", () => {
   it("en modo nunca no contesta ni los problemas", () => {
     expect(textoRespuesta(problema, "nunca")).toBeNull();
     expect(textoRespuesta(pendiente, "nunca")).toBeNull();
+  });
+});
+
+describe("interrupcionDe", () => {
+  const ahora = new Date("2026-10-11T12:00:00.000Z");
+  const hace = (minutos: number) =>
+    new Date(ahora.getTime() - minutos * 60_000).toISOString();
+
+  it("un mensaje con resultado ya terminó, por viejo que sea", () => {
+    expect(
+      interrupcionDe({ recibidoEn: hace(600), resultado: "En la bandeja" }, ahora)
+    ).toBeNull();
+  });
+
+  it("sin resultado y reciente todavía puede estar leyéndose", () => {
+    expect(interrupcionDe({ recibidoEn: hace(5), resultado: null }, ahora)).toBeNull();
+  });
+
+  it("sin resultado y viejo es un mensaje interrumpido", () => {
+    expect(interrupcionDe({ recibidoEn: hace(16), resultado: null }, ahora)).toBe(
+      "interrumpido"
+    );
+  });
+
+  it("un reintento cuenta desde que empezó, no desde que llegó el mensaje", () => {
+    const fila = (minutos: number) => ({
+      recibidoEn: hace(600),
+      resultado: marcaDeReintento(new Date(ahora.getTime() - minutos * 60_000)),
+    });
+    expect(interrupcionDe(fila(5), ahora)).toBeNull();
+    expect(interrupcionDe(fila(16), ahora)).toBe("reintento-interrumpido");
+  });
+
+  it("una fecha ilegible no deja el mensaje colgado para siempre", () => {
+    expect(interrupcionDe({ recibidoEn: "", resultado: null }, ahora)).toBe(
+      "interrumpido"
+    );
   });
 });

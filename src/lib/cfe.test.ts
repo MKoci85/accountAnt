@@ -10,6 +10,9 @@ const {
   parsearComprobantePdfFacturalista,
   parsearComprobantePdfIjserv,
   parsearItemsPdfUcfe,
+  parsearMontoFlexible,
+  parsearResultadoUcfe,
+  totalPdfUcfe,
 } = await import("@/lib/cfe");
 
 const PAYLOAD = "212345670012,101,A,1234,500.00,2026-09-03,ABC123";
@@ -68,6 +71,7 @@ describe("fechaISODesdeQR", () => {
   it("devuelve null en vez de armar una fecha con lo que no entiende", () => {
     expect(fechaISODesdeQR("27-05-2024")).toBeNull();
     expect(fechaISODesdeQR("20241327")).toBeNull();
+    expect(fechaISODesdeQR("31/02/2026")).toBeNull();
     expect(fechaISODesdeQR("")).toBeNull();
   });
 });
@@ -332,5 +336,67 @@ describe("parsearItemsPdfUcfe", () => {
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ nombre: "Leche entera", precio: 100 });
+  });
+});
+
+describe("parsearMontoFlexible", () => {
+  it("lee el mismo monto con cualquiera de las dos convenciones", () => {
+    expect(parsearMontoFlexible("1285,00")).toBe(1285);
+    expect(parsearMontoFlexible("1.285,00")).toBe(1285);
+    expect(parsearMontoFlexible("1,285.00")).toBe(1285);
+    expect(parsearMontoFlexible("1285.00")).toBe(1285);
+    expect(parsearMontoFlexible("1.234.567,89")).toBe(1234567.89);
+  });
+
+  it("toma tres dígitos después del separador como miles, no como decimales", () => {
+    expect(parsearMontoFlexible("1.285")).toBe(1285);
+    expect(parsearMontoFlexible("630")).toBe(630);
+    expect(parsearMontoFlexible("630,5")).toBe(630.5);
+  });
+
+  it("devuelve null para lo que no es un monto", () => {
+    expect(parsearMontoFlexible("")).toBeNull();
+    expect(parsearMontoFlexible(".,")).toBeNull();
+    expect(parsearMontoFlexible("abc")).toBeNull();
+  });
+});
+
+const htmlUcfe = (total: string) =>
+  `<h3>PANADERIA EJEMPLO SA - RUT: 210000000019</h3>
+   <p>Moneda: Peso Uruguayo<br/>Monto total a pagar: ${total}<br/></p>`;
+
+describe("parsearResultadoUcfe", () => {
+  it("lee emisor, moneda y un total de menos de mil", () => {
+    expect(parsearResultadoUcfe(htmlUcfe("630,00"))).toEqual({
+      emisorNombre: "PANADERIA EJEMPLO SA",
+      total: 630,
+      moneda: "UYU",
+    });
+  });
+
+  it("lee un total con separador de miles en los dos formatos", () => {
+    expect(parsearResultadoUcfe(htmlUcfe("1.285,00")).total).toBe(1285);
+    expect(parsearResultadoUcfe(htmlUcfe("1,285.00")).total).toBe(1285);
+  });
+
+  it("deja el total en null, nunca en NaN, si no lo puede leer", () => {
+    expect(parsearResultadoUcfe(htmlUcfe(".,")).total).toBeNull();
+    expect(parsearResultadoUcfe("<p>otra cosa</p>")).toEqual({
+      emisorNombre: "Comercio desconocido",
+      total: null,
+      moneda: null,
+    });
+  });
+});
+
+describe("totalPdfUcfe", () => {
+  it("lee el total impreso, con o sin miles", () => {
+    expect(totalPdfUcfe(PDF_UCFE)).toBe(630);
+    expect(totalPdfUcfe("TOTAL A PAGAR: 1.285,00")).toBe(1285);
+  });
+
+  it("devuelve null si no está o no es un número", () => {
+    expect(totalPdfUcfe("sin total")).toBeNull();
+    expect(totalPdfUcfe("TOTAL A PAGAR: .,")).toBeNull();
   });
 });

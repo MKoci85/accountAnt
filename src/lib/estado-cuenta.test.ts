@@ -3,6 +3,7 @@ import {
   detectarUmbralUSD,
   parsearEstadoCuenta,
   parsearMonto,
+  separarDescuentos,
 } from "@/lib/estado-cuenta";
 import type { FilaPdf, FragmentoPdf } from "@/lib/pdf";
 
@@ -156,5 +157,30 @@ describe("parsearEstadoCuenta", () => {
       fila([["31/12/25", 50], ["COMPRA", 100], ["10.00", 400]]),
     ]);
     expect(movimiento.fecha).toBe("2025-12-31");
+  });
+});
+
+describe("separarDescuentos", () => {
+  const mov = (descripcion: string, monto: number) => ({
+    fecha: "2026-08-14",
+    descripcion,
+    monto,
+    moneda: "UYU" as const,
+  });
+
+  it("los importes negativos son descuentos y no quedan entre las compras", () => {
+    const compra = mov("ANCAP 3140", 2000);
+    const descuento = mov("DTO.BROU- ANCAP", -181.5);
+    expect(separarDescuentos([compra, descuento])).toEqual({
+      compras: [compra],
+      descuentos: [descuento],
+    });
+  });
+
+  it("un movimiento en cero no es ninguna de las dos cosas", () => {
+    expect(separarDescuentos([mov("AJUSTE", 0)])).toEqual({
+      compras: [],
+      descuentos: [],
+    });
   });
 });

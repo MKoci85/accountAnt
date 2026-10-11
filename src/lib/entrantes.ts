@@ -106,10 +106,12 @@ export function motivoDeRevision(comprobante: {
       ? "Hay 1 ítem sin reconocer."
       : `Hay ${sinReconocer} ítems sin reconocer.`;
   }
-  if (comprobante.lineas.some((l) => l.precio <= 0 || l.cantidad <= 0)) {
+  if (comprobante.lineas.some((l) => !(l.precio > 0) || !(l.cantidad > 0))) {
     return "Hay ítems sin precio o sin cantidad.";
   }
-  if (comprobante.total === null) return "El comprobante no trajo el total.";
+  if (comprobante.total === null || !Number.isFinite(comprobante.total)) {
+    return "El comprobante no trajo el total.";
+  }
 
   const suma = comprobante.lineas.reduce(
     (acc, l) => acc + l.cantidad * l.precio,

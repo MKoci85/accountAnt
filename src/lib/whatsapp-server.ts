@@ -1,11 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, like, or } from "drizzle-orm";
 import { db } from "@/db";
 import { mensajesWhatsapp } from "@/db/schema";
 import { borrarConfig, escribirConfig, leerConfig } from "@/lib/config-server";
 import { recibirImagen } from "@/lib/entrantes-recepcion";
 import {
   MODOS_RESPUESTA,
+  PREFIJO_REINTENTO,
+  interrupcionDe,
+  marcaDeReintento,
   parsearNumeros,
   textoRespuesta,
   type DesenlaceMensaje,
@@ -152,9 +155,13 @@ export async function probarConexionWhatsapp(): Promise<string> {
   return [datos.display_phone_number, datos.verified_name].filter(Boolean).join(" · ");
 }
 
+const REENVIAR_FOTO =
+  "Se cortó la lectura de una foto que mandaste y ya no la puedo recuperar: mandámela de nuevo.";
+
 async function desenlaceDe(
   config: ConfigWhatsapp,
-  mensaje: MensajeEntrante
+  mensaje: MensajeEntrante,
+  esReintento: boolean
 ): Promise<DesenlaceMensaje> {
   if (!mensaje.mediaId) {
     return {
@@ -162,8 +169,22 @@ async function desenlaceDe(
       motivo: "Sólo leo fotos de comprobantes: mandame la foto del ticket.",
     };
   }
+
+  let imagen: Buffer;
   try {
-    const imagen = await descargarImagen(config, mensaje.mediaId);
+    imagen = await descargarImagen(config, mensaje.mediaId);
+  } catch (e) {
+    // En un reintento, que Meta ya no entregue el archivo es lo esperable: lo
+    // único que sirve decir es que hay que mandarla otra vez.
+    return {
+      tipo: "problema",
+      motivo: esReintento
+        ? REENVIAR_FOTO
+        : `No pude procesar la foto: ${e instanceof Error ? e.message : "error desconocido"}`,
+    };
+  }
+
+  try {
     const r = await recibirImagen(imagen, "whatsapp");
     if (!r.ok) return { tipo: "problema", motivo: r.mensaje };
     if (r.destino === "gasto") {
@@ -200,26 +221,38 @@ function resumenDesenlace(d: DesenlaceMensaje): string {
 }
 
 /**
- * Procesa un mensaje entrante ya autenticado por la firma del webhook. De un
- * número no autorizado se deja registro y nada más: ni se baja la foto ni se
- * contesta.
+ * Deja constancia de un mensaje entrante ya autenticado por la firma del
+ * webhook. Es síncrono y se llama antes de contestarle el 200 a Meta: a partir
+ * de ahí Meta no lo vuelve a entregar, así que lo que no quede escrito acá se
+ * pierde si el proceso se reinicia.
+ *
+ * El insert es además el candado contra entregas repetidas.
+ * @returns false si el id ya estaba: otro pedido ya se ocupó (o se está ocupando).
  */
-export async function procesarMensajeWhatsapp(mensaje: MensajeEntrante) {
-  const config = await leerConfigWhatsapp();
-
-  // El insert es el candado contra entregas repetidas: si el id ya estaba, otro
-  // pedido ya se ocupó (o se está ocupando) de este mensaje.
+export function registrarMensaje(mensaje: MensajeEntrante): boolean {
   const nuevo = db
     .insert(mensajesWhatsapp)
     .values({
       id: mensaje.id,
       recibidoEn: new Date().toISOString(),
       remitente: mensaje.remitente,
+      mediaId: mensaje.mediaId,
     })
     .onConflictDoNothing()
     .returning({ id: mensajesWhatsapp.id })
     .get();
-  if (!nuevo) return;
+  return Boolean(nuevo);
+}
+
+/**
+ * Procesa un mensaje que ya pasó por `registrarMensaje`. De un número no
+ * autorizado se deja registro y nada más: ni se baja la foto ni se contesta.
+ */
+export async function procesarMensajeRegistrado(
+  mensaje: MensajeEntrante,
+  { esReintento = false }: { esReintento?: boolean } = {}
+) {
+  const config = await leerConfigWhatsapp();
 
   const anotar = (resultado: string) =>
     db
@@ -233,7 +266,7 @@ export async function procesarMensajeWhatsapp(mensaje: MensajeEntrante) {
     return;
   }
 
-  const desenlace = await desenlaceDe(config, mensaje);
+  const desenlace = await desenlaceDe(config, mensaje, esReintento);
   anotar(resumenDesenlace(desenlace));
 
   const texto = textoRespuesta(desenlace, config.respuesta);
@@ -244,6 +277,77 @@ export async function procesarMensajeWhatsapp(mensaje: MensajeEntrante) {
       )
     );
   }
+}
+
+function filasSinTerminar() {
+  return db
+    .select()
+    .from(mensajesWhatsapp)
+    .where(
+      or(
+        isNull(mensajesWhatsapp.resultado),
+        like(mensajesWhatsapp.resultado, `${PREFIJO_REINTENTO}%`)
+      )
+    )
+    .all();
+}
+
+/** Cuántos mensajes quedaron a medio procesar (los que "Reintentar" retomaría). */
+export function contarMensajesInterrumpidos(): number {
+  const ahora = new Date();
+  return filasSinTerminar().filter((f) => interrupcionDe(f, ahora) !== null).length;
+}
+
+/**
+ * Retoma los mensajes que quedaron a medio procesar por un reinicio.
+ * @param incluirReintentados También los que ya se reintentaron y se volvieron
+ *   a cortar. Sólo a pedido del usuario: solos se reintentan una única vez.
+ * @returns Cuántos se retomaron.
+ */
+export async function reintentarMensajesInterrumpidos({
+  incluirReintentados = false,
+}: { incluirReintentados?: boolean } = {}): Promise<number> {
+  const ahora = new Date();
+  let retomados = 0;
+
+  for (const fila of filasSinTerminar()) {
+    const interrupcion = interrupcionDe(fila, ahora);
+    if (!interrupcion) continue;
+    if (interrupcion === "reintento-interrumpido" && !incluirReintentados) continue;
+
+    // Tomarlo es un update condicionado al resultado que se leyó: si otro
+    // pedido lo tomó entre medio, este no lo procesa de nuevo.
+    const tomado = db
+      .update(mensajesWhatsapp)
+      .set({ resultado: marcaDeReintento(new Date()) })
+      .where(
+        and(
+          eq(mensajesWhatsapp.id, fila.id),
+          fila.resultado === null
+            ? isNull(mensajesWhatsapp.resultado)
+            : eq(mensajesWhatsapp.resultado, fila.resultado)
+        )
+      )
+      .returning({ id: mensajesWhatsapp.id })
+      .get();
+    if (!tomado) continue;
+    retomados++;
+
+    if (!fila.mediaId) {
+      // No era una foto, o es anterior a que se guardara el id del archivo.
+      db.update(mensajesWhatsapp)
+        .set({ resultado: "Interrumpido: no quedó una foto para reintentar" })
+        .where(eq(mensajesWhatsapp.id, fila.id))
+        .run();
+      continue;
+    }
+
+    await procesarMensajeRegistrado(
+      { id: fila.id, remitente: fila.remitente, mediaId: fila.mediaId },
+      { esReintento: true }
+    ).catch((e) => console.error("WhatsApp: no se pudo reintentar el mensaje", e));
+  }
+  return retomados;
 }
 
 export async function ultimoMensajeWhatsapp() {

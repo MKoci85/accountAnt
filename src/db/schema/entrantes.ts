@@ -63,5 +63,8 @@ export const mensajesWhatsapp = sqliteTable("mensajes_whatsapp", {
   id: text("id").primaryKey(), // wamid de Meta
   recibidoEn: text("recibido_en").notNull(), // ISO 8601
   remitente: text("remitente").notNull(),
-  resultado: text("resultado"),
+  // Lo que hace falta para volver a bajar la foto si el proceso se cortó antes
+  // de terminar de leerla. Null cuando el mensaje no era una imagen.
+  mediaId: text("media_id"),
+  resultado: text("resultado"), // null = todavía procesando (o interrumpido)
 });

@@ -121,3 +121,44 @@ export function textoRespuesta(
         : null;
   }
 }
+
+/**
+ * Pasado este tiempo sin resultado, un mensaje no se está procesando: se cortó.
+ * Holgado a propósito — una lectura que encadena DGI, el proveedor y varios
+ * modelos de IA puede pasar de los cinco minutos, y reintentar una que sigue
+ * viva cargaría el comprobante dos veces.
+ */
+export const MINUTOS_PARA_DAR_POR_INTERRUMPIDO = 15;
+
+export const PREFIJO_REINTENTO = "Reintentando desde ";
+
+/** Lo que se anota como resultado mientras un mensaje interrumpido se reintenta. */
+export function marcaDeReintento(ahora: Date): string {
+  return `${PREFIJO_REINTENTO}${ahora.toISOString()}`;
+}
+
+/**
+ * Si un mensaje registrado quedó a medio procesar: el proceso se reinició (o
+ * se colgó) entre el 200 a Meta y el final de la lectura.
+ * - `"interrumpido"`: nunca tuvo resultado. Se reintenta solo, una vez.
+ * - `"reintento-interrumpido"`: también se cortó el reintento. Ya no se
+ *   reintenta solo — una foto que tumba el proceso lo tumbaría en cada
+ *   webhook —, sólo a pedido desde ajustes.
+ * @returns null si el mensaje terminó o todavía puede estar procesándose.
+ */
+export function interrupcionDe(
+  fila: { recibidoEn: string; resultado: string | null },
+  ahora: Date = new Date()
+): "interrumpido" | "reintento-interrumpido" | null {
+  const esReintento = fila.resultado?.startsWith(PREFIJO_REINTENTO) ?? false;
+  if (fila.resultado !== null && !esReintento) return null;
+
+  const desde = Date.parse(
+    esReintento ? fila.resultado!.slice(PREFIJO_REINTENTO.length) : fila.recibidoEn
+  );
+  const vencido =
+    !Number.isFinite(desde) ||
+    ahora.getTime() - desde > MINUTOS_PARA_DAR_POR_INTERRUMPIDO * 60_000;
+  if (!vencido) return null;
+  return esReintento ? "reintento-interrumpido" : "interrumpido";
+}

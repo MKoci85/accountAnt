@@ -338,6 +338,12 @@ export const AJUSTES = {
     nombre: "La URL de DGI",
     revalidar: [],
   },
+  cfeTimeoutMs: {
+    clave: "cfe_timeout_ms",
+    porDefecto: 20000,
+    nombre: "El timeout de DGI y los proveedores de CFE",
+    revalidar: [],
+  },
   iaTimeoutMs: {
     clave: "ia_timeout_ms",
     porDefecto: 120000,

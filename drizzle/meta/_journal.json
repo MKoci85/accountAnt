@@ -232,6 +232,20 @@
       "when": 1791672589741,
       "tag": "0032_mensajes_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791736495803,
+      "tag": "0033_comprobante_unico_con_tipo",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791736646072,
+      "tag": "0034_whatsapp_media_id",
+      "breakpoints": true
     }
   ]
 }

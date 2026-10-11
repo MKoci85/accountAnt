@@ -40,7 +40,7 @@ export const gastos = sqliteTable(
   },
   (table) => [
     uniqueIndex("gastos_comprobante_unico")
-      .on(table.emisorId, table.serie, table.numero)
+      .on(table.emisorId, table.tipoCfe, table.serie, table.numero)
       .where(sql`${table.serie} is not null`),
   ]
 );

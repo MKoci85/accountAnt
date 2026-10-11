@@ -145,9 +145,7 @@ export function EstadoCuentaView({
     setLineas(
       resultado.lineas.map((l) => ({
         ...l,
-        incluir:
-          (l.montoPesos ?? 0) > 0 &&
-          (l.estado === "directo" || l.estado === "faltante"),
+        incluir: l.estado === "directo" || l.estado === "faltante",
         descripcionEditada: l.descripcion,
         montoEditado: l.montoPesos !== null ? String(l.montoPesos) : "",
       })),
@@ -672,6 +670,13 @@ export function EstadoCuentaView({
               <div className="text-muted-foreground">
                 Total {formatearPesos(totalSeleccionado)}
               </div>
+              {analisis.descuentos.cantidad > 0 && (
+                <div className="text-muted-foreground">
+                  Descuentos: {formatearPesos(analisis.descuentos.pesos)}
+                  {analisis.descuentos.usdSinCotizacion > 0 &&
+                    ` + USD ${analisis.descuentos.usdSinCotizacion} sin cotización`}
+                </div>
+              )}
               {conMontoInvalido > 0 && (
                 <div className="text-destructive">
                   {conMontoInvalido}{" "}

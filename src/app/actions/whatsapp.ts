@@ -9,9 +9,11 @@ import {
 import {
   TIMEOUT_WHATSAPP_MS,
   URL_BASE_WHATSAPP,
+  contarMensajesInterrumpidos,
   escribirConfigWhatsapp,
   leerConfigWhatsapp,
   probarConexionWhatsapp,
+  reintentarMensajesInterrumpidos,
   ultimoMensajeWhatsapp,
 } from "@/lib/whatsapp-server";
 
@@ -34,6 +36,8 @@ export type EstadoWhatsapp = {
   timeoutMs: number;
   timeoutPorDefecto: number;
   ultimoMensaje: { recibidoEn: string; resultado: string | null } | null;
+  /** Mensajes que un reinicio dejó a medio procesar. */
+  interrumpidos: number;
 };
 
 export async function obtenerEstadoWhatsapp(): Promise<EstadoWhatsapp> {
@@ -56,6 +60,7 @@ export async function obtenerEstadoWhatsapp(): Promise<EstadoWhatsapp> {
     ultimoMensaje: ultimo
       ? { recibidoEn: ultimo.recibidoEn, resultado: ultimo.resultado }
       : null,
+    interrumpidos: contarMensajesInterrumpidos(),
   };
 }
 
@@ -139,6 +144,31 @@ export async function probarWhatsapp(): Promise<{ ok: boolean; texto: string }> 
     return {
       ok: false,
       texto: e instanceof Error ? e.message : "No se pudo conectar con Meta",
+    };
+  }
+}
+
+/** Retoma los mensajes que quedaron a medio procesar, incluso los ya reintentados. */
+export async function reintentarMensajesWhatsapp(): Promise<{
+  ok: boolean;
+  texto: string;
+}> {
+  try {
+    const n = await reintentarMensajesInterrumpidos({ incluirReintentados: true });
+    revalidatePath("/", "layout");
+    return {
+      ok: true,
+      texto:
+        n === 0
+          ? "No había mensajes para reintentar."
+          : n === 1
+            ? "Se reintentó 1 mensaje."
+            : `Se reintentaron ${n} mensajes.`,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      texto: e instanceof Error ? e.message : "No se pudo reintentar",
     };
   }
 }

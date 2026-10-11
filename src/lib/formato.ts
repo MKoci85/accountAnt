@@ -45,6 +45,22 @@ function desdeISO(fechaISO: string) {
   return new Date(anio, mes - 1, dia);
 }
 
+/**
+ * Si el texto es una fecha `aaaa-mm-dd` que existe en el calendario. El
+ * formato solo no alcanza: `2026-02-31` lo cumple, y guardada así ordena y
+ * filtra como una fecha que nunca ocurrió.
+ */
+export function esFechaISOValida(texto: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return false;
+  const [anio, mes, dia] = texto.split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return (
+    fecha.getUTCFullYear() === anio &&
+    fecha.getUTCMonth() === mes - 1 &&
+    fecha.getUTCDate() === dia
+  );
+}
+
 export function formatearFechaCorta(fechaISO: string) {
   const [, mes, dia] = fechaISO.split("-");
   return `${dia} ${MESES_CORTOS[Number(mes) - 1]}`;

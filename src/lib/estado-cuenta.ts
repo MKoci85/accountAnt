@@ -45,7 +45,7 @@ export function detectarUmbralUSD(filas: FilaPdf[]): number {
   return UMBRAL_USD_FALLBACK;
 }
 
-function esNoConsumo(texto: string): boolean {
+export function esNoConsumo(texto: string): boolean {
   const t = texto.toUpperCase().trimStart();
   return PREFIJOS_NO_CONSUMO.some((p) => t.startsWith(p.toUpperCase()));
 }
@@ -102,4 +102,20 @@ export function parsearEstadoCuenta(filas: FilaPdf[]): MovimientoEstadoCuenta[] 
   }
 
   return movimientos;
+}
+
+/**
+ * Separa las compras de los descuentos del resumen (importes negativos: la
+ * reducción de IVA por pagar con tarjeta, bonificaciones del banco,
+ * devoluciones). Un descuento no es un gasto a revisar ni a importar: sólo
+ * se informa su suma junto al total.
+ */
+export function separarDescuentos(movimientos: MovimientoEstadoCuenta[]): {
+  compras: MovimientoEstadoCuenta[];
+  descuentos: MovimientoEstadoCuenta[];
+} {
+  return {
+    compras: movimientos.filter((m) => m.monto > 0),
+    descuentos: movimientos.filter((m) => m.monto < 0),
+  };
 }

@@ -1,0 +1,1 @@
+ALTER TABLE `mensajes_whatsapp` ADD `media_id` text;

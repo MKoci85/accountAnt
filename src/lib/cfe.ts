@@ -1,4 +1,5 @@
 import { leerAjuste } from "@/lib/config-server";
+import { esFechaISOValida } from "@/lib/formato";
 import type { FormatoProveedorCfe } from "@/lib/procesadores";
 import { extractText, getDocumentProxy } from "unpdf";
 
@@ -51,10 +52,9 @@ export function fechaISODesdeQR(fechaQR: string): string | null {
     : iso
       ? [iso[1], iso[2], iso[3]]
       : [];
-  if (!a || !mes || !d || Number(mes) < 1 || Number(mes) > 12 || Number(d) < 1 || Number(d) > 31) {
-    return null;
-  }
-  return `${a}-${mes.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  if (!a || !mes || !d) return null;
+  const fecha = `${a}-${mes.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  return esFechaISOValida(fecha) ? fecha : null;
 }
 
 /**
@@ -64,6 +64,22 @@ export function fechaISODesdeQR(fechaQR: string): string | null {
 export function montoDesdeQR(montoQR: string): number | null {
   const monto = Number(montoQR);
   return Number.isFinite(monto) && monto > 0 ? monto : null;
+}
+
+/**
+ * `fetch` con el timeout de `cfeTimeoutMs`. El de Node corta solo recién a los
+ * ~5 minutos, y en la recepción por WhatsApp un proveedor colgado frena los
+ * mensajes que vienen detrás. El timeout cubre también la lectura del cuerpo.
+ */
+async function pedir(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(await leerAjuste("cfeTimeoutMs")),
+  });
+}
+
+function esTimeout(e: unknown): boolean {
+  return e instanceof Error && e.name === "TimeoutError";
 }
 
 export type ValidacionDgi = {
@@ -91,7 +107,7 @@ export async function validarConDgi(datos: DatosQR): Promise<ValidacionDgi> {
     .map(encodeURIComponent)
     .join(",")}`;
 
-  const res = await fetch(url, { method: "GET" });
+  const res = await pedir(url, { method: "GET" });
   if (!res.ok) {
     return { valido: false, mensaje: `DGI respondió ${res.status}` };
   }
@@ -196,6 +212,25 @@ function parsearMontoUY(texto: string): number {
   return Number(limpio);
 }
 
+/**
+ * Lee un monto sin saber qué convención de separadores usa: el último
+ * separador seguido de 1 o 2 dígitos es el decimal, y el resto son miles.
+ * Acepta `1285,00`, `1.285,00`, `1,285.00` y `1285.00`.
+ * @returns null si el texto no es un monto
+ */
+export function parsearMontoFlexible(texto: string): number | null {
+  const limpio = texto.trim();
+  if (!/^\d[\d.,]*$/.test(limpio)) return null;
+
+  const decimal = /[.,](\d{1,2})$/.exec(limpio);
+  const entero = (decimal ? limpio.slice(0, decimal.index) : limpio).replace(
+    /[.,]/g,
+    ""
+  );
+  const monto = Number(decimal ? `${entero}.${decimal[1]}` : entero);
+  return Number.isFinite(monto) ? monto : null;
+}
+
 function textoDeCelda(html: string): string {
   return html
     .replace(/<[^>]+>/g, " ")
@@ -212,6 +247,23 @@ function textoDeCelda(html: string): string {
  * @returns detalle del comprobante (comercio, ítems, total, moneda)
  */
 export async function consultarProcesador(
+  urlBase: string,
+  datos: DatosQR,
+  formato: FormatoProveedorCfe
+): Promise<DetalleComprobante> {
+  try {
+    return await consultarSegunFormato(urlBase, datos, formato);
+  } catch (e) {
+    if (esTimeout(e)) {
+      throw new Error(
+        "El proveedor de CFE no respondió a tiempo. Probá de nuevo en un momento."
+      );
+    }
+    throw e;
+  }
+}
+
+function consultarSegunFormato(
   urlBase: string,
   datos: DatosQR,
   formato: FormatoProveedorCfe
@@ -248,7 +300,7 @@ async function consultarScanntech(
     hash: datos.hash.slice(0, 6),
   });
 
-  const res = await fetch(urlBase, {
+  const res = await pedir(urlBase, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -363,7 +415,7 @@ async function consultarTaface(
   ];
   const url = `${urlBase}?${partes.map(encodeURIComponent).join(",")}`;
 
-  const res = await fetch(url, { method: "GET" });
+  const res = await pedir(url, { method: "GET" });
   if (!res.ok) {
     throw new Error(`El procesador respondió ${res.status}`);
   }
@@ -446,7 +498,7 @@ async function consultarUcfe(
 ): Promise<DetalleComprobante> {
   const urlConsulta = `${urlBase}?rut=${encodeURIComponent(datos.ruc)}`;
 
-  const resFormulario = await fetch(urlConsulta);
+  const resFormulario = await pedir(urlConsulta);
   if (!resFormulario.ok) {
     throw new Error(`El procesador respondió ${resFormulario.status}`);
   }
@@ -476,7 +528,7 @@ async function consultarUcfe(
     codigoSeguridad: datos.hash.slice(0, 6),
   });
 
-  const resBusqueda = await fetch(urlConsulta, {
+  const resBusqueda = await pedir(urlConsulta, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -497,30 +549,56 @@ async function consultarUcfe(
     throw new Error("El código de seguridad del comprobante no corresponde");
   }
 
-  const emisorNombre =
-    htmlResultado.match(/<h3>([^<]+?)\s*-\s*RUT:/)?.[1]?.trim() ??
-    "Comercio desconocido";
-
-  const totalMatch = htmlResultado.match(/Monto total a pagar:\s*([\d.,]+)/);
-  const total = totalMatch ? Number(totalMatch[1].replace(",", ".")) : null;
-
-  const monedaTexto = htmlResultado
-    .match(/Moneda:\s*([^<]+?)(?:<br|$)/)?.[1]
-    ?.trim();
-  const moneda = mapearMonedaUcfe(monedaTexto);
+  const { emisorNombre, total, moneda } = parsearResultadoUcfe(htmlResultado);
 
   const urlPdf = urlBase.replace(/[^/]*$/, "DescargarPDF.aspx");
-  const resPdf = await fetch(urlPdf, { headers: { Cookie: cookie } });
-  if (!resPdf.ok || !(resPdf.headers.get("content-type") ?? "").includes("application/pdf")) {
-    return { emisorNombre, direccion: null, items: [], total, moneda };
+  const sinItems = { emisorNombre, direccion: null, items: [], total, moneda };
+  let bufferPdf: ArrayBuffer;
+  try {
+    const resPdf = await pedir(urlPdf, { headers: { Cookie: cookie } });
+    if (!resPdf.ok || !(resPdf.headers.get("content-type") ?? "").includes("application/pdf")) {
+      return sinItems;
+    }
+    bufferPdf = await resPdf.arrayBuffer();
+  } catch (e) {
+    // La cabecera ya se leyó del HTML: un PDF que no llega deja el comprobante
+    // sin ítems, no sin nada.
+    if (esTimeout(e)) return sinItems;
+    throw e;
   }
 
-  const bufferPdf = await resPdf.arrayBuffer();
   const pdf = await getDocumentProxy(new Uint8Array(bufferPdf));
   const { text } = await extractText(pdf, { mergePages: false });
-  const items = parsearItemsPdfUcfe(text.join("\n"));
+  const textoPdf = text.join("\n");
+  const items = parsearItemsPdfUcfe(textoPdf);
 
-  return { emisorNombre, direccion: null, items, total, moneda };
+  return {
+    emisorNombre,
+    direccion: null,
+    items,
+    total: total ?? totalPdfUcfe(textoPdf),
+    moneda,
+  };
+}
+
+/**
+ * Lee la cabecera de la página de resultado de uCFE. Los ítems no están ahí:
+ * vienen en el PDF.
+ * @param html HTML de la página de resultado
+ * @returns emisor, total (null si no se pudo leer) y moneda
+ */
+export function parsearResultadoUcfe(
+  html: string
+): Pick<DetalleComprobante, "emisorNombre" | "total" | "moneda"> {
+  const emisorNombre =
+    html.match(/<h3>([^<]+?)\s*-\s*RUT:/)?.[1]?.trim() ?? "Comercio desconocido";
+
+  const totalCrudo = html.match(/Monto total a pagar:\s*([\d.,]+)/)?.[1];
+  const total = totalCrudo ? parsearMontoFlexible(totalCrudo) : null;
+
+  const monedaTexto = html.match(/Moneda:\s*([^<]+?)(?:<br|$)/)?.[1]?.trim();
+
+  return { emisorNombre, total, moneda: mapearMonedaUcfe(monedaTexto) };
 }
 
 async function consultarFacturalista(
@@ -537,7 +615,7 @@ async function consultarFacturalista(
     rut: datos.ruc,
   });
 
-  const res = await fetch(urlBase.split("?")[0], {
+  const res = await pedir(urlBase.split("?")[0], {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -654,7 +732,7 @@ async function consultarIjserv(
     codSeguridad: datos.hash.slice(0, 6),
   });
 
-  const res = await fetch(urlBase, {
+  const res = await pedir(urlBase, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -810,8 +888,7 @@ export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
     });
   }
 
-  const totalCrudo = texto.match(/TOTAL A PAGAR:\s*([\d.,]+)/i)?.[1];
-  const total = totalCrudo ? parsearMontoUY(totalCrudo) : null;
+  const total = totalPdfUcfe(texto);
   const sumaLineas = items.reduce((acc, item) => acc + item.precio, 0);
   const lineasSinIva = total !== null && Math.abs(total - sumaLineas) > 0.05;
   if (!lineasSinIva) return items;
@@ -820,4 +897,11 @@ export function parsearItemsPdfUcfe(texto: string): ItemComprobante[] {
     ...item,
     precio: Math.round(item.precio * (1 + tasas[i] / 100) * 100) / 100,
   }));
+}
+
+/** El `TOTAL A PAGAR` impreso en el PDF de uCFE, o null si no se pudo leer. */
+export function totalPdfUcfe(texto: string): number | null {
+  const crudo = texto.match(/TOTAL A PAGAR:\s*([\d.,]+)/i)?.[1];
+  const total = crudo ? parsearMontoUY(crudo) : NaN;
+  return Number.isFinite(total) ? total : null;
 }

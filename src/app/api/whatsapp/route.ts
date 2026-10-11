@@ -3,7 +3,9 @@ import { revalidatePath } from "next/cache";
 import { firmaValida, mensajesDeWebhook } from "@/lib/whatsapp";
 import {
   leerConfigWhatsapp,
-  procesarMensajeWhatsapp,
+  procesarMensajeRegistrado,
+  registrarMensaje,
+  reintentarMensajesInterrumpidos,
 } from "@/lib/whatsapp-server";
 
 // Webhook de WhatsApp: la única ruta de la app pensada para estar abierta a
@@ -50,24 +52,36 @@ export async function POST(request: Request) {
     return new Response(null, { status: 400 });
   }
 
-  const mensajes = mensajesDeWebhook(payload, config.phoneNumberId);
-  if (mensajes.length) {
-    // Meta espera el 200 enseguida y reintenta si tarda; leer una foto con IA
-    // puede llevar mucho más que eso, así que el trabajo va después de
-    // contestar.
-    after(async () => {
-      for (const mensaje of mensajes) {
-        await procesarMensajeWhatsapp(mensaje).catch((e) =>
-          console.error("WhatsApp: no se pudo procesar el mensaje", e)
-        );
-      }
-      // Sólo refresca lo que ya está abierto en el navegador; si acá no se
-      // puede revalidar, el próximo pedido igual lee la base.
-      try {
-        revalidatePath("/", "layout");
-      } catch {}
+  // Todos los mensajes quedan registrados antes de contestar: después del 200
+  // Meta no los vuelve a entregar, y el trabajo de abajo puede cortarse si el
+  // proceso se reinicia. Si el insert falla, el 500 hace que Meta reintente.
+  const nuevos = mensajesDeWebhook(payload, config.phoneNumberId).filter(
+    registrarMensaje
+  );
+
+  // Meta espera el 200 enseguida y reintenta si tarda; leer una foto con IA
+  // puede llevar mucho más que eso, así que el trabajo va después de
+  // contestar.
+  after(async () => {
+    for (const mensaje of nuevos) {
+      await procesarMensajeRegistrado(mensaje).catch((e) =>
+        console.error("WhatsApp: no se pudo procesar el mensaje", e)
+      );
+    }
+    // Cualquier webhook firmado (también un aviso de "entregado") sirve de
+    // ocasión para retomar lo que un reinicio dejó a medias. Va después de
+    // los nuevos para no demorarlos.
+    const retomados = await reintentarMensajesInterrumpidos().catch((e) => {
+      console.error("WhatsApp: no se pudieron retomar los mensajes interrumpidos", e);
+      return 0;
     });
-  }
+    if (!nuevos.length && !retomados) return;
+    // Sólo refresca lo que ya está abierto en el navegador; si acá no se
+    // puede revalidar, el próximo pedido igual lee la base.
+    try {
+      revalidatePath("/", "layout");
+    } catch {}
+  });
 
   return new Response("OK");
 }
