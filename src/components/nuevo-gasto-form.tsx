@@ -6,6 +6,8 @@ import {
   Check,
   Pencil,
   ListChecks,
+  Inbox,
+  Image as IconoFoto,
   ScanLine,
   ChevronDown,
 } from "lucide-react";
@@ -27,6 +29,7 @@ import {
   crearGasto,
   editarGasto,
   obtenerReferenciasDePrecio,
+  obtenerHormigaHeredada,
   type GastoDetalle,
 } from "@/app/actions/gastos";
 import { NuevaCategoriaDialog } from "@/components/nueva-categoria-dialog";
@@ -40,6 +43,7 @@ import {
 import { EscanerComprobante, type LineaDesdeTicket } from "@/components/escaner-comprobante";
 import { LectorTicketIA } from "@/components/lector-ticket-ia";
 import type { ResultadoTicketIA } from "@/app/actions/cfe";
+import type { EntranteParaRevision } from "@/app/actions/entrantes";
 import { EmisorDialog } from "@/components/emisor-dialog";
 import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
 import { LineaGastoFila } from "@/components/linea-gasto-fila";
@@ -55,6 +59,7 @@ import {
 } from "@/lib/precios-referencia";
 import { formatearMonto, hoyISO } from "@/lib/formato";
 import {
+  aplicarHormigaHeredada,
   desvincularDeCatalogo,
   idItemProvisorio,
   lineaLibreNueva,
@@ -116,21 +121,29 @@ export function NuevoGastoForm({
   categoriasIniciales,
   gastoInicial,
   revision,
+  entranteInicial,
   proveedoresIA = [],
   proveedorActivoIA,
 }: {
   categoriasIniciales: Categoria[];
   gastoInicial?: GastoDetalle;
   revision?: RevisionImportacion;
+  /** Comprobante de la bandeja de entrada con el que se precarga el gasto. */
+  entranteInicial?: EntranteParaRevision;
   proveedoresIA?: { id: ProveedorIA; nombre: string; modelo: string }[];
   proveedorActivoIA?: ProveedorIA;
 }) {
   const [categoriasList, setCategoriasList] = useState(categoriasIniciales);
 
-  const [fecha, setFecha] = useState(gastoInicial?.fecha ?? hoyISO());
+  const [fecha, setFecha] = useState(
+    gastoInicial?.fecha ?? entranteInicial?.fecha ?? hoyISO()
+  );
 
   const [emisorQuery, setEmisorQuery] = useState(
-    gastoInicial?.emisorNombre ?? ""
+    gastoInicial?.emisorNombre ??
+      entranteInicial?.emisor?.nombre ??
+      entranteInicial?.comercio ??
+      ""
   );
   const [emisorSeleccionado, setEmisorSeleccionado] = useState<Emisor | null>(
     gastoInicial
@@ -141,7 +154,7 @@ export function NuevoGastoForm({
           proveedorCfeId: null,
           esGenerico: false,
         }
-      : null
+      : (entranteInicial?.emisor ?? null)
   );
   const [resultadosEmisorRaw, setResultadosEmisor] = useState<Emisor[]>([]);
   const debouncedEmisorQuery = useDebounced(emisorQuery);
@@ -156,7 +169,17 @@ export function NuevoGastoForm({
   const buscadorItemRef = useRef<HTMLInputElement | null>(null);
   const [inicio] = useState(() =>
     normalizarLineasDeServicio(
-      gastoInicial ? lineasDesdeGasto(gastoInicial, revision?.detalle) : [],
+      gastoInicial
+        ? lineasDesdeGasto(gastoInicial, revision?.detalle)
+        : entranteInicial
+          ? // Las keys van a ids del DOM, y `lineasDesdeTicket` las arma con
+            // la hora: este inicializador corre en el servidor y otra vez al
+            // hidratar, así que se pisan con unas que den igual las dos veces.
+            lineasDesdeTicket(entranteInicial.lineas).map((linea, i) => ({
+              ...linea,
+              key: `entrante-${i}`,
+            }))
+          : [],
       categoriasIniciales
     )
   );
@@ -167,8 +190,11 @@ export function NuevoGastoForm({
     tipoCfe: string;
     serie: string;
     numero: string;
-  } | null>(null);
-  const [totalComprobante, setTotalComprobante] = useState<number | null>(null);
+  } | null>(entranteInicial?.datosCfe ?? null);
+  const [totalComprobante, setTotalComprobante] = useState<number | null>(
+    entranteInicial?.total ?? null
+  );
+  const [avisoCaptura, setAvisoCaptura] = useState<string | null>(null);
 
   const [categoriaDialogOpen, setCategoriaDialogOpen] = useState(false);
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
@@ -320,10 +346,6 @@ export function NuevoGastoForm({
     buscadorItemRef.current?.focus();
   }
 
-  function setLineasNormalizadas(nuevas: LineaGasto[]) {
-    setLineas(normalizarLineasDeServicio(nuevas, categoriasList).lineas);
-  }
-
   function agregarLineaLibre() {
     const categoria =
       categoriasList.find((c) => c.esServicio) ?? categoriasList[0];
@@ -446,6 +468,31 @@ export function NuevoGastoForm({
     );
   }
 
+  /**
+   * Suma al gasto las líneas de una captura (QR o foto). Con el form vacío es
+   * la carga de siempre; con líneas ya cargadas las agrega al final, que es lo
+   * que permite un ticket largo en dos fotos. No se agrupan contra las que ya
+   * estaban: si las dos fotos se pisan, una línea repetida tiene que verse
+   * para poder quitarla, no esconderse dentro de una cantidad.
+   * @returns true si había líneas antes, o sea si fue un agregado.
+   */
+  function sumarLineasDeCaptura(nuevas: LineaGasto[]): boolean {
+    const yaHabia = lineas.length;
+    const normalizadas = normalizarLineasDeServicio(nuevas, categoriasList).lineas;
+    if (yaHabia === 0) {
+      setLineas(normalizadas);
+      setAvisoCaptura(null);
+      return false;
+    }
+    setLineas((prev) => [...prev, ...normalizadas]);
+    setAvisoCaptura(
+      `Se ${normalizadas.length === 1 ? "agregó 1 ítem" : `agregaron ${normalizadas.length} ítems`} a ${
+        yaHabia === 1 ? "la línea que ya estaba" : `las ${yaHabia} que ya estaban`
+      }.`
+    );
+    return true;
+  }
+
   function handleComprobanteResuelto(datos: {
     emisor: Emisor;
     tipoCfe: string;
@@ -456,20 +503,48 @@ export function NuevoGastoForm({
     total: number | null;
     avisoMoneda: string | null;
   }) {
-    seleccionarEmisor(datos.emisor);
-    setDatosCfe({
-      tipoCfe: datos.tipoCfe,
-      serie: datos.serie,
-      numero: datos.numero,
-    });
-    setFecha(datos.fecha);
-    setLineasNormalizadas(lineasDesdeTicket(datos.lineas));
-    setTotalComprobante(datos.avisoMoneda ? null : datos.total);
+    const total = datos.avisoMoneda ? null : datos.total;
+    const esAgregado = sumarLineasDeCaptura(lineasDesdeTicket(datos.lineas));
+    if (!esAgregado) {
+      seleccionarEmisor(datos.emisor);
+      setDatosCfe({
+        tipoCfe: datos.tipoCfe,
+        serie: datos.serie,
+        numero: datos.numero,
+      });
+      setFecha(datos.fecha);
+      setTotalComprobante(total);
+      return;
+    }
+
+    // Agregado: el encabezado del gasto es de la primera captura. Sólo se
+    // completa lo que todavía falta, y el total a cotejar es la suma de los
+    // comprobantes — si alguna parte no trajo total, ya no hay contra qué.
+    if (!emisorSeleccionado) {
+      seleccionarEmisor(datos.emisor);
+    } else if (emisorSeleccionado.id !== datos.emisor.id) {
+      setAvisoCaptura(
+        (previo) =>
+          `${previo ?? ""} Ese comprobante es de ${datos.emisor.nombre}, pero el gasto sigue a nombre de ${emisorSeleccionado.nombre}.`
+      );
+    }
+    if (!datosCfe) {
+      setDatosCfe({
+        tipoCfe: datos.tipoCfe,
+        serie: datos.serie,
+        numero: datos.numero,
+      });
+    }
+    setTotalComprobante(
+      totalComprobante !== null && total !== null
+        ? Number((totalComprobante + total).toFixed(2))
+        : null
+    );
   }
 
   async function handleTicketIAResuelto(ticket: ResultadoTicketIA) {
-    setTotalComprobante(null);
-    setLineasNormalizadas(
+    const hayComercio = emisorSeleccionado !== null || emisorQuery.trim() !== "";
+    const esAgregado = sumarLineasDeCaptura(
       lineasDesdeTicket(
         ticket.items.map((item) => ({
           nombreTicket: item.nombreTicket,
@@ -484,9 +559,13 @@ export function NuevoGastoForm({
         }))
       )
     );
-    if (ticket.fecha) setFecha(ticket.fecha);
+    // Una foto no trae total validado: lo que hubiera ya no cubre todas las
+    // líneas.
+    setTotalComprobante(null);
+    if (ticket.fecha && !esAgregado) setFecha(ticket.fecha);
 
-    if (ticket.comercio) {
+    // En un agregado el comercio ya elegido (o a medio escribir) no se pisa.
+    if (ticket.comercio && !(esAgregado && hayComercio)) {
       setEmisorQuery(ticket.comercio);
       const encontrados = await buscarEmisores(ticket.comercio);
       const exacto = encontrados.find(
@@ -540,6 +619,29 @@ export function NuevoGastoForm({
       cancelado = true;
     };
   }, [idsConReferencia, fecha, gastoInicial?.id]);
+
+  // La marca hormiga se hereda por ítem + comercio. No corre al editar un
+  // gasto guardado: ahí cada línea ya tiene la marca que el usuario le dejó.
+  const emisorIdActual = emisorSeleccionado?.id ?? null;
+  const esEdicionDeGasto = gastoInicial !== undefined;
+  useEffect(() => {
+    if (esEdicionDeGasto) return;
+    const ids = idsConReferencia.split(",").filter(Boolean).map(Number);
+    let cancelado = false;
+    const consulta =
+      emisorIdActual !== null && ids.length
+        ? obtenerHormigaHeredada(emisorIdActual, ids)
+        : Promise.resolve<number[]>([]);
+    consulta.then((hormigas) => {
+      if (cancelado) return;
+      setLineas((prev) =>
+        aplicarHormigaHeredada(prev, emisorIdActual, new Set(hormigas))
+      );
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [idsConReferencia, emisorIdActual, esEdicionDeGasto]);
 
   function referenciaDeLinea(linea: LineaGasto) {
     if (linea.item.id <= 0 || linea.item.nombre === ITEM_PAGO_TARJETA) {
@@ -665,6 +767,7 @@ export function NuevoGastoForm({
             fecha,
             items,
             ...(datosCfe ?? {}),
+            entranteId: entranteInicial?.id,
           });
         }
       } catch (e) {
@@ -720,6 +823,14 @@ export function NuevoGastoForm({
               onResuelto={handleTicketIAResuelto}
             />
           </div>
+          {avisoCaptura && (
+            <p
+              role="status"
+              className="rounded-lg border bg-card px-4 py-2.5 text-[12.5px] text-muted-foreground"
+            >
+              {avisoCaptura}
+            </p>
+          )}
         </div>
       )}
 
@@ -1044,6 +1155,47 @@ export function NuevoGastoForm({
       />
     </div>
   );
+
+  if (entranteInicial) {
+    return (
+      <div className="flex flex-col gap-5">
+        <Card className="px-5 py-3.5">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Inbox className="h-4 w-4 text-muted-foreground" />
+            Viene de la bandeja de entrada
+            {entranteInicial.tieneFoto && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                nativeButton={false}
+                render={
+                  <a
+                    href={`/bandeja/${entranteInicial.id}/foto`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <IconoFoto className="h-3.5 w-3.5" />
+                    Ver ticket
+                  </a>
+                }
+              />
+            )}
+          </div>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+            Todavía no es un gasto: revisalo y guardalo. Si salís sin guardar,
+            sigue esperando en la bandeja.
+          </p>
+          {entranteInicial.aviso && (
+            <p className="mt-2 text-[12.5px] text-amber-600 dark:text-amber-400">
+              {entranteInicial.aviso}
+            </p>
+          )}
+        </Card>
+        {contenido}
+      </div>
+    );
+  }
 
   if (!revision) return contenido;
 

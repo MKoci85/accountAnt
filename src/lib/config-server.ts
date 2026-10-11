@@ -173,6 +173,51 @@ export async function escribirLimitadorActivo(activo: boolean) {
   await escribirConfig(CLAVE_LIMITADOR, activo ? "1" : "0");
 }
 
+const CLAVE_BLOQUEO_POR_MES = "bandeja_bloqueo_por_mes";
+const CLAVE_GUARDADO_AUTOMATICO = "bandeja_guardado_automatico";
+const CLAVE_ITEMS_CON_IA = "bandeja_items_con_ia";
+
+export type AjustesBandeja = {
+  /** Frenar la carga manual mientras queden comprobantes de un mes anterior. */
+  bloqueoPorMes: boolean;
+  /** Guardar sin pasar por la bandeja el comprobante que no deja nada por decidir. */
+  guardadoAutomatico: boolean;
+  /** Leer con IA los ítems de un comprobante validado que llegó sin detalle. */
+  itemsConIA: boolean;
+};
+
+const CLAVES_BANDEJA: Record<keyof AjustesBandeja, string> = {
+  bloqueoPorMes: CLAVE_BLOQUEO_POR_MES,
+  guardadoAutomatico: CLAVE_GUARDADO_AUTOMATICO,
+  itemsConIA: CLAVE_ITEMS_CON_IA,
+};
+
+// Los dos primeros arrancan activos: sólo un "0" guardado los apaga. El de la
+// IA es al revés — manda la foto a un tercero, así que hay que prenderlo.
+export async function leerAjustesBandeja(): Promise<AjustesBandeja> {
+  const [bloqueo, guardado, itemsConIA] = await Promise.all([
+    leerConfig(CLAVE_BLOQUEO_POR_MES),
+    leerConfig(CLAVE_GUARDADO_AUTOMATICO),
+    leerConfig(CLAVE_ITEMS_CON_IA),
+  ]);
+  return {
+    bloqueoPorMes: bloqueo !== "0",
+    guardadoAutomatico: guardado !== "0",
+    itemsConIA: itemsConIA === "1",
+  };
+}
+
+export function esAjusteBandeja(ajuste: string): ajuste is keyof AjustesBandeja {
+  return Object.hasOwn(CLAVES_BANDEJA, ajuste);
+}
+
+export async function escribirAjusteBandeja(
+  ajuste: keyof AjustesBandeja,
+  activo: boolean,
+) {
+  await escribirConfig(CLAVES_BANDEJA[ajuste], activo ? "1" : "0");
+}
+
 export function claveTpm(proveedor: ProveedorIA, modelo: string) {
   return `ia_tpm_${proveedor}_${modelo}`;
 }

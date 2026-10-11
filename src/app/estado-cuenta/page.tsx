@@ -1,14 +1,16 @@
 import { listarCategorias } from "@/app/actions/catalogos";
 import { obtenerProveedoresDisponiblesIA } from "@/app/actions/configuracion";
+import { obtenerBorradorEstadoCuenta } from "@/app/actions/estado-cuenta";
 import { EstadoCuentaView } from "@/components/estado-cuenta-view";
 import { PageContainer } from "@/components/page-container";
 
 export const dynamic = "force-dynamic";
 
 export default async function EstadosCuentaPage() {
-  const [categorias, ia] = await Promise.all([
+  const [categorias, ia, borrador] = await Promise.all([
     listarCategorias(),
     obtenerProveedoresDisponiblesIA(),
+    obtenerBorradorEstadoCuenta(),
   ]);
 
   return (
@@ -29,6 +31,7 @@ export default async function EstadosCuentaPage() {
         categorias={categorias}
         proveedoresIA={ia.disponibles}
         proveedorActivoIA={ia.activo}
+        borradorInicial={borrador}
       />
     </PageContainer>
   );

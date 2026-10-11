@@ -37,6 +37,35 @@ export function parsearQR(textoQR: string): DatosQR {
   return { ruc, tipoCfe, serie, numero, monto, fecha, hash };
 }
 
+/**
+ * La fecha del QR en formato ISO (`aaaa-mm-dd`). Casi todos los emisores la
+ * escriben `dd/mm/aaaa`, pero no es lo único que circula: hay POS que mandan
+ * `aaaammdd` (Tata) o directamente la ISO.
+ * @returns null si no es ninguna de las tres o no es una fecha posible.
+ */
+export function fechaISODesdeQR(fechaQR: string): string | null {
+  const latina = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(fechaQR);
+  const iso = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(fechaQR);
+  const [a, mes, d] = latina
+    ? [latina[3], latina[2], latina[1]]
+    : iso
+      ? [iso[1], iso[2], iso[3]]
+      : [];
+  if (!a || !mes || !d || Number(mes) < 1 || Number(mes) > 12 || Number(d) < 1 || Number(d) > 31) {
+    return null;
+  }
+  return `${a}-${mes.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+
+/**
+ * El monto del QR como número. Es el total del comprobante en su propia
+ * moneda, que el QR no dice cuál es.
+ */
+export function montoDesdeQR(montoQR: string): number | null {
+  const monto = Number(montoQR);
+  return Number.isFinite(monto) && monto > 0 ? monto : null;
+}
+
 export type ValidacionDgi = {
   valido: boolean;
   mensaje: string;

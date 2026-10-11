@@ -6,16 +6,39 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageContainer } from "@/components/page-container";
 import { obtenerResumenDashboard } from "@/app/actions/gastos";
 import { contarGruposItemsSimilares } from "@/app/actions/catalogos";
+import { obtenerResumenBandeja } from "@/app/actions/entrantes";
 import { formatearMonto, formatearFechaLarga, nombreMes } from "@/lib/formato";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [resumen, gruposItemsSimilares] = await Promise.all([
+  const [resumen, gruposItemsSimilares, bandeja] = await Promise.all([
     obtenerResumenDashboard(),
     contarGruposItemsSimilares(),
+    obtenerResumenBandeja(),
   ]);
   const revisiones = [
+    {
+      cantidad: resumen.gastosSinRevisar,
+      href: "/gastos?automaticos=1",
+      texto:
+        resumen.gastosSinRevisar === 1
+          ? "1 gasto se guardó solo y no lo revisaste"
+          : `${resumen.gastosSinRevisar} gastos se guardaron solos y no los revisaste`,
+      detalle: "ya cuentan como gastos: miralos por si alguno era hormiga",
+    },
+    {
+      cantidad: bandeja.total,
+      href: "/bandeja",
+      texto:
+        bandeja.total === 1
+          ? "1 comprobante esperando en la bandeja de entrada"
+          : `${bandeja.total} comprobantes esperando en la bandeja de entrada`,
+      detalle:
+        bandeja.bloqueada
+          ? "hay de un mes anterior: la carga manual está bloqueada hasta resolverlos"
+          : "todavía no son gastos: falta revisarlos y guardarlos",
+    },
     {
       cantidad: resumen.gruposGastosCombinables,
       href: "/gastos?combinables=1",

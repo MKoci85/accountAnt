@@ -21,12 +21,21 @@ import type { ProveedorIA } from "@/lib/proveedores-ia";
 import {
   analizarEstadoCuenta,
   analizarEstadoCuentaConIA,
+  descartarBorradorEstadoCuenta,
   importarMovimientos,
+  retomarBorradorEstadoCuenta,
+  type BorradorEstadoCuenta,
+  type ConflictoConBandeja,
   type AnalisisEstadoCuenta,
   type LineaAnalizada,
 } from "@/app/actions/estado-cuenta";
 import type { categorias } from "@/db/schema";
-import { formatearMonto, formatearFechaCorta, parsearMonto } from "@/lib/formato";
+import {
+  aISO,
+  formatearMonto,
+  formatearFechaCorta,
+  parsearMonto,
+} from "@/lib/formato";
 import { EsperandoIA, BloqueoIA } from "@/components/esperando-ia";
 import {
   LIMITE_SUBIDA_BYTES,
@@ -81,14 +90,19 @@ export function EstadoCuentaView({
   categorias,
   proveedoresIA,
   proveedorActivoIA,
+  borradorInicial,
 }: {
   categorias: Categoria[];
   proveedoresIA: { id: ProveedorIA; nombre: string; modelo: string }[];
   proveedorActivoIA: ProveedorIA;
+  borradorInicial: BorradorEstadoCuenta | null;
 }) {
   const hayApiKeyIA = proveedoresIA.length > 0;
   const [analisis, setAnalisis] = useState<AnalisisEstadoCuenta | null>(null);
   const [lineas, setLineas] = useState<LineaEditable[]>([]);
+  const [borrador, setBorrador] = useState(borradorInicial);
+  const [conflictos, setConflictos] = useState<ConflictoConBandeja[]>([]);
+  const [retomando, startRetomar] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [avisoIA, setAvisoIA] = useState<string | null>(null);
   const importadosURL = Number(useSearchParams().get("importados"));
@@ -110,10 +124,81 @@ export function EstadoCuentaView({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
+  /**
+   * Muestra un análisis ya cotejado. Si choca con la bandeja no se muestran
+   * las líneas: los movimientos quedaron en borrador del lado del servidor y
+   * lo que hay para hacer es resolver esos comprobantes.
+   */
+  function mostrarAnalisis(resultado: AnalisisEstadoCuenta) {
+    if (resultado.conflictosBandeja.length) {
+      setConflictos(resultado.conflictosBandeja);
+      setBorrador({
+        creadoEn: new Date().toISOString(),
+        movimientos: resultado.lineas.length,
+      });
+      setAnalisis(null);
+      setLineas([]);
+      return;
+    }
+    setConflictos([]);
+    setAnalisis(resultado);
+    setLineas(
+      resultado.lineas.map((l) => ({
+        ...l,
+        incluir:
+          (l.montoPesos ?? 0) > 0 &&
+          (l.estado === "directo" || l.estado === "faltante"),
+        descripcionEditada: l.descripcion,
+        montoEditado: l.montoPesos !== null ? String(l.montoPesos) : "",
+      })),
+    );
+  }
+
+  function handleRetomar() {
+    setError(null);
+    setResultado(null);
+    startRetomar(async () => {
+      try {
+        const r = await retomarBorradorEstadoCuenta();
+        if (!r || !r.lineas.length) {
+          setBorrador(null);
+          setConflictos([]);
+          setError("El borrador ya no está: subí el PDF de nuevo.");
+          return;
+        }
+        setAnalizadoConIA(r.conIA);
+        mostrarAnalisis(r);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "No se pudo retomar el borrador",
+        );
+      }
+    });
+  }
+
+  function handleDescartarBorrador() {
+    if (!window.confirm("¿Descartar el estado de cuenta en borrador?")) return;
+    startRetomar(async () => {
+      await descartarBorradorEstadoCuenta();
+      setBorrador(null);
+      setConflictos([]);
+      setAnalisis(null);
+      setLineas([]);
+    });
+  }
+
   async function handleArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (
+      borrador &&
+      !window.confirm(
+        "Hay un estado de cuenta en borrador. Subir otro lo reemplaza. ¿Seguir?",
+      )
+    ) {
+      return;
+    }
 
     setError(null);
     setAvisoIA(null);
@@ -162,17 +247,9 @@ export function EstadoCuentaView({
         setAnalisis(null);
         return;
       }
-      setAnalisis(resultado);
-      setLineas(
-        resultado.lineas.map((l) => ({
-          ...l,
-          incluir:
-            (l.montoPesos ?? 0) > 0 &&
-            (l.estado === "directo" || l.estado === "faltante"),
-          descripcionEditada: l.descripcion,
-          montoEditado: l.montoPesos !== null ? String(l.montoPesos) : "",
-        })),
-      );
+      // Un PDF nuevo sin choques reemplaza al borrador que hubiera.
+      setBorrador(null);
+      mostrarAnalisis(resultado);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "No se pudo leer el PDF",
@@ -227,6 +304,7 @@ export function EstadoCuentaView({
           aliasOriginal: l.emisorDesdeTexto ? l.descripcion : undefined,
         }));
         const r = await importarMovimientos(seleccion);
+        setBorrador(null);
         if (!r.gastoIds.length) {
           setResultado(`Se importaron ${r.importados} movimientos.`);
           setAnalisis(null);
@@ -363,6 +441,96 @@ export function EstadoCuentaView({
           </p>
         )}
       </Card>
+
+      {conflictos.length > 0 && (
+        <Card className="gap-3 border-amber-500/20 bg-amber-500/5 px-5 py-4.5">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <AlertTriangle className="h-4 w-4 text-amber-500" />
+            La importación quedó en pausa
+          </div>
+          <p className="text-[12.5px] text-muted-foreground">
+            {conflictos.length === 1
+              ? "Hay un comprobante sin confirmar en la bandeja que podría ser uno de estos movimientos."
+              : `Hay ${conflictos.length} comprobantes sin confirmar en la bandeja que podrían ser movimientos de este estado de cuenta.`}{" "}
+            Importar ahora los dejaría duplicados. Confirmalos o descartalos y
+            después retomá: el estado de cuenta quedó guardado como borrador,
+            no hace falta volver a subir el PDF.
+          </p>
+          <ul className="flex flex-col divide-y divide-amber-500/15 rounded-lg border border-amber-500/15 bg-card">
+            {conflictos.map((c) => (
+              <li
+                key={c.entranteId}
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3.5 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium">
+                    {c.comercio ?? "Comercio sin identificar"}
+                    {c.total !== null && ` · ${formatearPesos(c.total)}`}
+                  </div>
+                  <div className="text-[11.5px] text-muted-foreground">
+                    {c.fecha ? formatearFechaCorta(c.fecha) : "sin fecha legible"}
+                    {c.movimientos.length > 0
+                      ? ` · coincide con ${c.movimientos.join(", ")}`
+                      : " · le faltan datos para descartarlo y cae dentro del período"}
+                  </div>
+                </div>
+                <Link
+                  href={
+                    c.revisable
+                      ? `/gastos/nuevo?entrante=${c.entranteId}`
+                      : "/bandeja"
+                  }
+                  className="text-[12.5px] font-medium text-primary hover:underline"
+                >
+                  {c.revisable ? "Revisar y guardar" : "Ver en la bandeja"}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={handleRetomar} disabled={retomando}>
+              {retomando ? "Cruzando..." : "Ya los resolví: retomar"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleDescartarBorrador}
+              disabled={retomando}
+            >
+              Descartar el borrador
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {borrador && !analisis && conflictos.length === 0 && (
+        <Card className="flex-row flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div>
+            <div className="text-sm font-semibold">
+              Hay un estado de cuenta en borrador
+            </div>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              {borrador.movimientos}{" "}
+              {borrador.movimientos === 1 ? "movimiento" : "movimientos"},
+              subido el {formatearFechaCorta(aISO(new Date(borrador.creadoEn)))}
+              . Quedó en pausa porque coincidía con comprobantes de la bandeja.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={handleRetomar} disabled={retomando}>
+              {retomando ? "Cruzando..." : "Retomar"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleDescartarBorrador}
+              disabled={retomando}
+            >
+              Descartar
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {analisis && (
         <>

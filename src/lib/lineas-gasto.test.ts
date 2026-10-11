@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aplicarHormigaHeredada,
   desvincularDeCatalogo,
   esLineaDeServicio,
   idItemProvisorio,
@@ -374,5 +375,49 @@ describe("desvincularDeCatalogo", () => {
     const a = desvincularDeCatalogo({ ...vinculada, key: "a" });
     const b = desvincularDeCatalogo({ ...vinculada, key: "b" });
     expect(a.item.id).not.toBe(b.item.id);
+  });
+});
+
+describe("aplicarHormigaHeredada", () => {
+  const COMERCIO = 7;
+
+  it("marca la línea cuyo ítem ya fue hormiga en ese comercio", () => {
+    const [l] = aplicarHormigaHeredada([linea()], COMERCIO, new Set([10]));
+    expect(l.esHormiga).toBe(true);
+    expect(l.hormigaHeredada).toEqual({ emisorId: COMERCIO, itemId: 10 });
+  });
+
+  it("no toca un ítem sin antecedente, ni una marca puesta a mano", () => {
+    const lineas = [linea(), linea({ key: "k2", esHormiga: true })];
+    expect(aplicarHormigaHeredada(lineas, COMERCIO, new Set())).toBe(lineas);
+  });
+
+  it("se aplica una sola vez: desmarcar esta compra no se pisa", () => {
+    const [marcada] = aplicarHormigaHeredada([linea()], COMERCIO, new Set([10]));
+    const desmarcada = [{ ...marcada, esHormiga: false }];
+    expect(aplicarHormigaHeredada(desmarcada, COMERCIO, new Set([10]))).toBe(
+      desmarcada
+    );
+  });
+
+  it("al cambiar de comercio retira la marca heredada y vuelve a decidir", () => {
+    const heredadas = aplicarHormigaHeredada([linea()], COMERCIO, new Set([10]));
+    const [sinAntecedente] = aplicarHormigaHeredada(heredadas, 8, new Set());
+    expect(sinAntecedente.esHormiga).toBe(false);
+    expect(sinAntecedente.hormigaHeredada).toBeUndefined();
+
+    const [conAntecedente] = aplicarHormigaHeredada(heredadas, 8, new Set([10]));
+    expect(conAntecedente.esHormiga).toBe(true);
+    expect(conAntecedente.hormigaHeredada).toEqual({ emisorId: 8, itemId: 10 });
+  });
+
+  it("sin comercio elegido no hereda nada", () => {
+    const lineas = [linea()];
+    expect(aplicarHormigaHeredada(lineas, null, new Set([10]))).toBe(lineas);
+  });
+
+  it("una línea sin catalogar nunca hereda", () => {
+    const lineas = [linea({ item: { ...linea().item, id: -3 } })];
+    expect(aplicarHormigaHeredada(lineas, COMERCIO, new Set([-3]))).toBe(lineas);
   });
 });

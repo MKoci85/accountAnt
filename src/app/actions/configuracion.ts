@@ -21,6 +21,10 @@ import {
   escribirCatalogoModelos,
   escribirConfig,
   escribirLimitadorActivo,
+  escribirAjusteBandeja,
+  esAjusteBandeja,
+  leerAjustesBandeja,
+  type AjustesBandeja,
   escribirModelosRespaldo,
   escribirRpdEfectivo,
   escribirTpmEfectivo,
@@ -149,6 +153,22 @@ export async function obtenerProveedoresDisponiblesIA(): Promise<{
   }
 
   return { activo, disponibles };
+}
+
+export async function obtenerAjustesBandeja(): Promise<AjustesBandeja> {
+  return leerAjustesBandeja();
+}
+
+export async function guardarAjusteBandeja(
+  ajuste: keyof AjustesBandeja,
+  activo: boolean,
+) {
+  if (!esAjusteBandeja(ajuste)) {
+    throw new Error("Ajuste de bandeja desconocido");
+  }
+  await escribirAjusteBandeja(ajuste, activo);
+  // El aviso del layout depende del bloqueo, y vive en todas las pantallas.
+  revalidatePath("/", "layout");
 }
 
 export async function obtenerLimitadorIA(): Promise<boolean> {

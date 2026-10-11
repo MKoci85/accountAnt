@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope, Geist_Mono } from "next/font/google";
 import { Nav } from "@/components/nav";
+import { AvisoBandeja } from "@/components/aviso-bandeja";
+import { obtenerResumenBandeja } from "@/app/actions/entrantes";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -18,7 +20,13 @@ export const metadata: Metadata = {
   description: "Seguimiento personal de gastos hormiga",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Lee la bandeja de entrada en cada pedido: prerenderizado, el aviso quedaría
+// congelado en lo que había al compilar.
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const bandeja = await obtenerResumenBandeja();
+
   return (
     <html
       lang="es"
@@ -27,7 +35,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full">
         <div className="flex min-h-screen">
           <Nav />
-          <main className="flex-1 pb-20 md:pb-0">{children}</main>
+          <main className="flex-1 pb-20 md:pb-0">
+            <AvisoBandeja
+              total={bandeja.total}
+              atrasados={bandeja.bloqueada ? bandeja.atrasados : 0}
+            />
+            {children}
+          </main>
         </div>
       </body>
     </html>

@@ -105,6 +105,7 @@ export function ComboboxBusqueda<T>({
         aria-expanded={panelVisible}
         aria-controls={idPanel}
         aria-autocomplete="list"
+        autoComplete="off"
         aria-activedescendant={
           panelVisible ? idOpcion(indiceActivo) : undefined
         }

@@ -4,6 +4,7 @@ import {
   parsearQR,
   validarConDgi,
   consultarProcesador,
+  fechaISODesdeQR,
   type DatosQR,
   type DetalleComprobante,
 } from "@/lib/cfe";
@@ -40,7 +41,8 @@ export type ItemTicket = {
 
 export type ResultadoConsultaCFE = {
   datosQR: DatosQR;
-  fechaISO: string;
+  /** null cuando el QR trae la fecha en un formato que no se reconoce. */
+  fechaISO: string | null;
   dgiMensaje: string;
   emisor: Emisor;
   emisorEsNuevo: boolean;
@@ -165,7 +167,8 @@ async function convertirAPesos(
     };
   }
 
-  const cotizacion = await obtenerCotizacionCacheada(fechaISODesdeQR(fechaQR));
+  const fechaISO = fechaISODesdeQR(fechaQR);
+  const cotizacion = fechaISO ? await obtenerCotizacionCacheada(fechaISO) : null;
   if (!cotizacion) {
     return {
       detalle,
@@ -190,12 +193,11 @@ async function convertirAPesos(
   };
 }
 
-function fechaISODesdeQR(fechaQR: string): string {
-  const [dia, mes, anio] = fechaQR.split("/");
-  return `${anio}-${mes}-${dia}`;
-}
-
-async function resolverItemContraCatalogo(item: {
+/**
+ * Busca un ítem de ticket en el catálogo (nombre, alias o descripción) y, si no
+ * está, le sugiere una categoría por el texto.
+ */
+export async function resolverItemContraCatalogo(item: {
   nombre: string;
   precio: number;
   tamano: string | null;

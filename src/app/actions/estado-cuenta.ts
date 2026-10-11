@@ -8,7 +8,13 @@ import {
   categorias,
   itemsCatalogo,
   emisorAlias,
+  gastosEntrantes,
+  estadoCuentaBorrador,
 } from "@/db/schema";
+import {
+  entrantesEnConflicto,
+  parsearItemsEntrante,
+} from "@/lib/entrantes";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { extraerFilasPdf } from "@/lib/pdf";
@@ -63,6 +69,23 @@ export type AnalisisEstadoCuenta = {
   desde: string | null;
   hasta: string | null;
   gastosEnRango: number;
+  /**
+   * Comprobantes de la bandeja que podrían ser alguno de estos movimientos.
+   * Mientras haya alguno la importación no sigue: los movimientos quedan en
+   * borrador hasta que se confirmen o descarten.
+   */
+  conflictosBandeja: ConflictoConBandeja[];
+};
+
+export type ConflictoConBandeja = {
+  entranteId: number;
+  comercio: string | null;
+  fecha: string | null;
+  total: number | null;
+  /** Se puede abrir en el formulario (false = todavía no se pudo leer). */
+  revisable: boolean;
+  /** Descripciones de los movimientos con los que coincide; vacío si choca por faltarle datos. */
+  movimientos: string[];
 };
 
 function sumarDias(fechaISO: string, dias: number): string {
@@ -100,7 +123,84 @@ export async function analizarEstadoCuenta(
   buffer: ArrayBuffer
 ): Promise<AnalisisEstadoCuenta> {
   const filas = await extraerFilasPdf(buffer);
-  return cotejarMovimientos(parsearEstadoCuenta(filas));
+  return cotejarYGuardarBorrador(parsearEstadoCuenta(filas), false);
+}
+
+/**
+ * Coteja los movimientos de un PDF recién leído. Si chocan con la bandeja
+ * quedan en borrador para retomarlos sin volver a subir (ni a pagar con cuota
+ * de IA) el PDF; si no, el borrador que hubiera se descarta: subir un estado
+ * de cuenta nuevo reemplaza al anterior.
+ */
+async function cotejarYGuardarBorrador(
+  movimientos: MovimientoEstadoCuenta[],
+  conIA: boolean
+): Promise<AnalisisEstadoCuenta> {
+  const analisis = await cotejarMovimientos(movimientos);
+  if (analisis.conflictosBandeja.length) {
+    const valores = {
+      creadoEn: new Date().toISOString(),
+      movimientosJson: JSON.stringify(movimientos),
+      conIA,
+    };
+    db.insert(estadoCuentaBorrador)
+      .values({ id: 1, ...valores })
+      .onConflictDoUpdate({ target: estadoCuentaBorrador.id, set: valores })
+      .run();
+  } else {
+    db.delete(estadoCuentaBorrador).run();
+  }
+  return analisis;
+}
+
+function leerMovimientosBorrador(json: string): MovimientoEstadoCuenta[] {
+  try {
+    const crudo: unknown = JSON.parse(json);
+    if (!Array.isArray(crudo)) return [];
+    return crudo.filter(
+      (m): m is MovimientoEstadoCuenta =>
+        !!m &&
+        typeof m === "object" &&
+        typeof m.fecha === "string" &&
+        typeof m.descripcion === "string" &&
+        typeof m.monto === "number" &&
+        (m.moneda === "UYU" || m.moneda === "USD")
+    );
+  } catch {
+    return [];
+  }
+}
+
+export type BorradorEstadoCuenta = { creadoEn: string; movimientos: number };
+
+export async function obtenerBorradorEstadoCuenta(): Promise<BorradorEstadoCuenta | null> {
+  const fila = db.select().from(estadoCuentaBorrador).get();
+  if (!fila) return null;
+  return {
+    creadoEn: fila.creadoEn,
+    movimientos: leerMovimientosBorrador(fila.movimientosJson).length,
+  };
+}
+
+/**
+ * Vuelve a cruzar los movimientos del borrador contra los gastos y la bandeja
+ * de ahora. No lo borra: eso pasa al importar o al descartarlo.
+ * @returns null si no hay borrador.
+ */
+export async function retomarBorradorEstadoCuenta(): Promise<
+  (AnalisisEstadoCuenta & { conIA: boolean }) | null
+> {
+  const fila = db.select().from(estadoCuentaBorrador).get();
+  if (!fila) return null;
+  const analisis = await cotejarMovimientos(
+    leerMovimientosBorrador(fila.movimientosJson)
+  );
+  return { ...analisis, conIA: fila.conIA };
+}
+
+export async function descartarBorradorEstadoCuenta() {
+  db.delete(estadoCuentaBorrador).run();
+  revalidatePath("/estado-cuenta");
 }
 
 /**
@@ -127,7 +227,7 @@ export async function analizarEstadoCuentaConIA(
     return { ...ANALISIS_VACIO, errorIA: r.error ?? "La IA no pudo interpretar el PDF" };
   }
   const ordenados = [...r.movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha));
-  return { ...(await cotejarMovimientos(ordenados)), avisoIA: r.aviso };
+  return { ...(await cotejarYGuardarBorrador(ordenados, true)), avisoIA: r.aviso };
 }
 
 const ANALISIS_VACIO: AnalisisEstadoCuenta = {
@@ -136,6 +236,7 @@ const ANALISIS_VACIO: AnalisisEstadoCuenta = {
   desde: null,
   hasta: null,
   gastosEnRango: 0,
+  conflictosBandeja: [],
 };
 
 async function cotejarMovimientos(
@@ -192,7 +293,66 @@ async function cotejarMovimientos(
     totalPesos: lineas.reduce((acc, l) => acc + (l.montoPesos ?? 0), 0),
   };
 
-  return { lineas, resumen, desde, hasta, gastosEnRango: candidatos.length };
+  return {
+    lineas,
+    resumen,
+    desde,
+    hasta,
+    gastosEnRango: candidatos.length,
+    conflictosBandeja: await conflictosConBandeja(lineas, emisorPorId),
+  };
+}
+
+/**
+ * Cruza contra la bandeja sólo los movimientos que se importarían: uno que ya
+ * matchea un gasto cargado no va a crear nada, así que no puede duplicar.
+ */
+async function conflictosConBandeja(
+  lineas: LineaAnalizada[],
+  emisorPorId: Map<number, typeof emisores.$inferSelect>
+): Promise<ConflictoConBandeja[]> {
+  const entrantes = (await db.select().from(gastosEntrantes)).map((e) => {
+    const items = parsearItemsEntrante(e.itemsJson);
+    return {
+      ...e,
+      // Un ticket leído por IA no trae total validado: vale la suma de lo leído.
+      total:
+        e.total ??
+        (items.length
+          ? Number(items.reduce((acc, i) => acc + i.precio, 0).toFixed(2))
+          : null),
+    };
+  });
+  if (!entrantes.length) return [];
+
+  const importables = lineas.filter(
+    (l) => l.estado === "faltante" || l.estado === "directo"
+  );
+  const conflictos = entrantesEnConflicto(importables, entrantes, {
+    dias: TOLERANCIA_DIAS,
+    monto: TOLERANCIA_MONTO,
+  });
+
+  return conflictos.flatMap((c) => {
+    const entrante = entrantes.find((e) => e.id === c.entranteId);
+    if (!entrante) return [];
+    return [
+      {
+        entranteId: entrante.id,
+        comercio:
+          (entrante.emisorId !== null
+            ? emisorPorId.get(entrante.emisorId)?.nombre
+            : null) ?? entrante.comercio,
+        fecha: entrante.fecha,
+        total: entrante.total,
+        revisable: entrante.estado === "pendiente",
+        movimientos: c.movimientos.flatMap((indice) => {
+          const linea = lineas.find((l) => l.indice === indice);
+          return linea ? [linea.descripcion] : [];
+        }),
+      },
+    ];
+  });
 }
 
 async function analizarMovimiento(
@@ -357,9 +517,13 @@ export async function importarMovimientos(seleccion: SeleccionImportacion[]) {
     }
   });
 
+  // Importado: el borrador ya cumplió.
+  db.delete(estadoCuentaBorrador).run();
+
   revalidatePath("/gastos");
   revalidatePath("/reportes");
   revalidatePath("/");
+  revalidatePath("/estado-cuenta");
 
   return { importados: seleccion.length, gastoIds };
 }

@@ -29,6 +29,11 @@ import {
   type UnidadMedida,
 } from "@/lib/precios-referencia";
 import { leerAjuste } from "@/lib/config-server";
+import {
+  MENSAJE_BLOQUEO_POR_MES,
+  borrarEntrante,
+  resumenDeBandeja,
+} from "@/lib/entrantes-server";
 
 export type NuevoGastoItem = {
   itemCatalogoId?: number | null;
@@ -169,6 +174,10 @@ export type NuevoGastoDatos = {
   numero?: string;
   montoTotal?: number | null;
   gastoFijoId?: number | null;
+  /** Comprobante de la bandeja de entrada que este gasto resuelve. */
+  entranteId?: number;
+  /** Guardado automático: queda marcado hasta que el usuario lo revise. */
+  sinRevisar?: boolean;
 };
 
 /**
@@ -199,6 +208,7 @@ export async function guardarGasto(
           montoTotal: datos.montoTotal ?? null,
           creadoEn: new Date().toISOString(),
           gastoFijoId: datos.gastoFijoId ?? null,
+          sinRevisar: datos.sinRevisar ?? false,
         })
         .returning()
         .get();
@@ -216,7 +226,16 @@ export async function guardarGasto(
 }
 
 export async function crearGasto(datos: NuevoGastoDatos) {
+  // El bloqueo por mes es de la carga manual: resolver un entrante es justo lo
+  // que lo destraba, y pagar un gasto fijo va por `guardarGasto` y no pasa por acá.
+  if (!datos.entranteId && (await resumenDeBandeja()).bloqueada) {
+    throw new Error(MENSAJE_BLOQUEO_POR_MES);
+  }
   await guardarGasto(datos);
+  if (datos.entranteId) {
+    await borrarEntrante(datos.entranteId);
+    revalidatePath("/bandeja");
+  }
 
   revalidatePath("/gastos");
   revalidatePath("/");
@@ -239,8 +258,9 @@ export async function editarGasto(
   const items = await conSobreprecioDetectado(datos.items, datos.fecha, id);
 
   db.transaction((tx) => {
+    // Guardar desde el formulario es haberlo revisado.
     tx.update(gastos)
-      .set({ fecha: datos.fecha, emisorId: datos.emisorId })
+      .set({ fecha: datos.fecha, emisorId: datos.emisorId, sinRevisar: false })
       .where(eq(gastos.id, id))
       .run();
 
@@ -257,6 +277,16 @@ export async function editarGasto(
       ? datos.redirigirA
       : `/gastos/${id}`;
   redirect(destino);
+}
+
+/**
+ * Da por revisados todos los gastos que se guardaron solos. No cambia nada del
+ * gasto: sólo apaga el aviso.
+ */
+export async function marcarGastosRevisados() {
+  db.update(gastos).set({ sinRevisar: false }).where(eq(gastos.sinRevisar, true)).run();
+  revalidatePath("/gastos");
+  revalidatePath("/");
 }
 
 export async function borrarGasto(id: number) {
@@ -469,6 +499,8 @@ export type GastoResumen = {
   emisorGenerico: boolean;
   sinComprobante: boolean;
   emisorPendiente: boolean;
+  /** Guardado automático que todavía no se revisó. */
+  sinRevisar: boolean;
   categorias: { id: number; nombre: string; color: string | null }[];
   itemsNombres: string[];
   cantidadItems: number;
@@ -482,6 +514,7 @@ async function listarGastosConDetalle() {
       fecha: gastos.fecha,
       creadoEn: gastos.creadoEn,
       serie: gastos.serie,
+      sinRevisar: gastos.sinRevisar,
       emisorId: emisores.id,
       emisorNombre: emisores.nombre,
       emisorRuc: emisores.ruc,
@@ -518,6 +551,7 @@ async function listarGastosConDetalle() {
         sinComprobante: fila.serie === null,
         emisorPendiente:
           fila.emisorRuc !== null && fila.proveedorCfeId === null,
+        sinRevisar: fila.sinRevisar,
         categorias: [],
         itemsNombres: [],
         cantidadItems: 0,
@@ -591,6 +625,7 @@ export async function obtenerResumenDashboard() {
     totalHormiga,
     porcentajeHormiga: totalMes > 0 ? Math.round((totalHormiga / totalMes) * 100) : 0,
     emisoresPendientes: emisoresPendientes.length,
+    gastosSinRevisar: todos.filter((g) => g.sinRevisar).length,
     gruposGastosCombinables: agruparGastosCombinables(todos, new Set(descartados))
       .length,
     gastosRecientes: gastosDelMes.slice(0, 5),
@@ -889,4 +924,34 @@ async function restaurarSobreprecioLimpiado(
     if (vuelveASerSobreprecio) restaurados += 1;
   }
   return restaurados;
+}
+
+/**
+ * De los ítems dados, cuáles heredan la marca de gasto hormiga en ese comercio.
+ * La calificación es de ítem + comercio, nunca del ítem solo: el mismo café es
+ * hormiga en el bar de la esquina y no lo es en una estación de ruta. Alcanza
+ * con una compra marcada ahí: se lee el dato actual, así que la forma de
+ * apagar la herencia es desmarcar esas compras.
+ * @returns Ids de ítems de catálogo con alguna compra hormiga en ese comercio.
+ */
+export async function obtenerHormigaHeredada(
+  emisorId: number,
+  itemCatalogoIds: number[]
+): Promise<number[]> {
+  const ids = Array.from(new Set(itemCatalogoIds));
+  if (!ids.length) return [];
+
+  const filas = await db
+    .selectDistinct({ itemCatalogoId: gastoItems.itemCatalogoId })
+    .from(gastoItems)
+    .innerJoin(gastos, eq(gastoItems.gastoId, gastos.id))
+    .where(
+      and(
+        eq(gastos.emisorId, emisorId),
+        inArray(gastoItems.itemCatalogoId, ids),
+        eq(gastoItems.esHormiga, true)
+      )
+    );
+
+  return filas.flatMap((f) => (f.itemCatalogoId === null ? [] : [f.itemCatalogoId]));
 }

@@ -23,7 +23,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { combinarGastos, type GastoResumen } from "@/app/actions/gastos";
+import {
+  combinarGastos,
+  marcarGastosRevisados,
+  type GastoResumen,
+} from "@/app/actions/gastos";
 import { formatearMonto, formatearFechaCorta } from "@/lib/formato";
 import { GastoRow } from "@/components/gasto-row";
 import { GastosCombinablesDialog } from "@/components/gastos-combinables-dialog";
@@ -35,6 +39,7 @@ import {
 } from "@/components/gasto-row-acciones";
 
 function notaGasto(g: GastoResumen) {
+  if (g.sinRevisar) return "guardado solo, sin revisar";
   if (g.emisorPendiente) return "comercio pendiente de mapear";
   if (g.sinComprobante) return "sin comprobante";
   return null;
@@ -131,6 +136,14 @@ export function GastosView({
   const [seleccionados, setSeleccionados] = useState<number[]>([]);
   const [combinando, startCombinar] = useTransition();
   const [errorCombinar, setErrorCombinar] = useState<string | null>(null);
+  const [soloSinRevisar, setSoloSinRevisar] = useState(
+    () => params.get("automaticos") !== null
+  );
+  const [marcandoRevisados, startMarcarRevisados] = useTransition();
+  const cantidadSinRevisar = gastos.filter((g) => g.sinRevisar).length;
+  // Si ya no queda ninguno (se marcaron, o se editó el último), el filtro no
+  // tiene nada que mostrar y se ignora en vez de dejar la lista vacía.
+  const filtraSinRevisar = soloSinRevisar && cantidadSinRevisar > 0;
   const [combinablesOpen, setCombinablesOpen] = useState(
     () => params.get("combinables") !== null
   );
@@ -231,6 +244,9 @@ export function GastosView({
     const hoy = new Date();
 
     return gastos.filter((g) => {
+      // "Guardados solos" es una lista de pendientes, no un período: se
+      // muestran todos, sin importar los demás filtros.
+      if (filtraSinRevisar) return g.sinRevisar;
       if (categoriaId !== "todas" && !g.categorias.some((c) => String(c.id) === categoriaId)) {
         return false;
       }
@@ -250,7 +266,16 @@ export function GastosView({
       }
       return true;
     });
-  }, [gastos, busqueda, categoriaId, emisorId, rangoFecha, periodo, campoFecha]);
+  }, [
+    gastos,
+    busqueda,
+    categoriaId,
+    emisorId,
+    rangoFecha,
+    periodo,
+    campoFecha,
+    filtraSinRevisar,
+  ]);
 
   const totalPaginas = Math.max(1, Math.ceil(gastosFiltrados.length / porPagina));
   const paginaActual = Math.min(pagina, totalPaginas);
@@ -261,6 +286,49 @@ export function GastosView({
 
   return (
     <>
+      {cantidadSinRevisar > 0 && (
+        <Card className="flex-row flex-wrap items-center justify-between gap-3 border-amber-500/20 bg-amber-500/5 px-5 py-3.5">
+          <div>
+            <div className="text-sm font-semibold">
+              {cantidadSinRevisar === 1
+                ? "1 gasto se guardó solo"
+                : `${cantidadSinRevisar} gastos se guardaron solos`}
+            </div>
+            <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+              Vinieron de un comprobante con todo reconocido. Ya cuentan como
+              gastos; revisalos por si alguno era hormiga. Editar y guardar uno
+              lo da por revisado.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSoloSinRevisar((v) => !v);
+                setPagina(1);
+              }}
+            >
+              {filtraSinRevisar ? "Ver todos los gastos" : "Ver sólo esos"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={marcandoRevisados}
+              onClick={() =>
+                startMarcarRevisados(async () => {
+                  await marcarGastosRevisados();
+                  setSoloSinRevisar(false);
+                  router.refresh();
+                })
+              }
+            >
+              Marcar como revisados
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Card className="flex-row flex-wrap items-center gap-2.5 px-3.5 py-3.5">
         <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

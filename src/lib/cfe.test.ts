@@ -4,6 +4,8 @@ vi.mock("@/db", () => ({ db: {} }));
 
 const {
   parsearQR,
+  fechaISODesdeQR,
+  montoDesdeQR,
   parsearNombreItem,
   parsearComprobantePdfFacturalista,
   parsearComprobantePdfIjserv,
@@ -52,6 +54,29 @@ describe("parsearQR", () => {
     expect(() => parsearQR("212345670012,101,,1234,500.00,2026-09-03,ABC123")).toThrow(
       /formato esperado/
     );
+  });
+});
+
+describe("fechaISODesdeQR", () => {
+  it("lee los tres formatos en que los emisores escriben la fecha", () => {
+    expect(fechaISODesdeQR("27/05/2024")).toBe("2024-05-27");
+    expect(fechaISODesdeQR("3/9/2026")).toBe("2026-09-03");
+    expect(fechaISODesdeQR("20240527")).toBe("2024-05-27");
+    expect(fechaISODesdeQR("2026-09-03")).toBe("2026-09-03");
+  });
+
+  it("devuelve null en vez de armar una fecha con lo que no entiende", () => {
+    expect(fechaISODesdeQR("27-05-2024")).toBeNull();
+    expect(fechaISODesdeQR("20241327")).toBeNull();
+    expect(fechaISODesdeQR("")).toBeNull();
+  });
+});
+
+describe("montoDesdeQR", () => {
+  it("lee el monto con punto decimal y descarta lo que no es un importe", () => {
+    expect(montoDesdeQR("1753.40")).toBe(1753.4);
+    expect(montoDesdeQR("0")).toBeNull();
+    expect(montoDesdeQR("1.753,40")).toBeNull();
   });
 });
 

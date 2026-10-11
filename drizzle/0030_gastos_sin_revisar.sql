@@ -1,0 +1,1 @@
+ALTER TABLE `gastos` ADD `sin_revisar` integer DEFAULT false NOT NULL;

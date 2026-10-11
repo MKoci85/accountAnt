@@ -45,7 +45,47 @@ export type LineaGasto = {
    * otro escaneo.
    */
   aliasRegistrado?: { itemCatalogoId: number; texto: string };
+  /**
+   * Para qué comercio + ítem ya se resolvió la herencia de la marca hormiga en
+   * esta línea. Es lo que hace que se aplique una sola vez: sin esto, cada
+   * vuelta de la consulta volvería a marcar una línea que el usuario desmarcó
+   * a propósito para esta compra.
+   */
+  hormigaHeredada?: { emisorId: number; itemId: number };
 };
+
+/**
+ * Marca como hormiga las líneas cuyo ítem ya se compró como hormiga en ese
+ * comercio. Cada línea se resuelve una sola vez por comercio + ítem: después
+ * de eso la marca es del usuario, que puede sacarla para esta compra sin tocar
+ * las anteriores. Si cambia el comercio o el ítem de la línea, una marca que
+ * había venido heredada se retira antes de volver a decidir.
+ * @returns El mismo arreglo si no hubo nada que cambiar.
+ */
+export function aplicarHormigaHeredada(
+  lineas: LineaGasto[],
+  emisorId: number | null,
+  itemsHormiga: ReadonlySet<number>
+): LineaGasto[] {
+  let cambio = false;
+  const resultado = lineas.map((linea) => {
+    const previa = linea.hormigaHeredada;
+    const itemId = linea.item.id;
+    if (previa && previa.emisorId === emisorId && previa.itemId === itemId) {
+      return linea;
+    }
+    if (emisorId !== null && itemId > 0 && itemsHormiga.has(itemId)) {
+      cambio = true;
+      return { ...linea, esHormiga: true, hormigaHeredada: { emisorId, itemId } };
+    }
+    if (previa) {
+      cambio = true;
+      return { ...linea, esHormiga: false, hormigaHeredada: undefined };
+    }
+    return linea;
+  });
+  return cambio ? resultado : lineas;
+}
 
 export type OrigenTicket = {
   nombre: string;
@@ -251,7 +291,7 @@ export function lineasDesdeTicket(lineas: LineaDesdeTicket[]): LineaGasto[] {
         categoriaId: linea.itemCatalogo.categoriaId,
         categoriaNombre: linea.itemCatalogo.categoriaNombre,
         ...camposDesdeTicket(linea),
-        esHormiga: false,
+        esHormiga: linea.esHormiga ?? false,
         esSobreprecio: false,
         sobreprecioManual: false,
         esPrecioBase: false,

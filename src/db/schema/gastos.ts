@@ -30,6 +30,13 @@ export const gastos = sqliteTable(
     gastoFijoId: integer("gasto_fijo_id").references(() => gastosFijos.id, {
       onDelete: "set null",
     }),
+
+    // Se guardó solo desde un comprobante recibido y todavía nadie lo miró. Es
+    // un gasto como cualquier otro para reportes y precios: la marca sólo
+    // alimenta el aviso "guardados solos" hasta que se revisa.
+    sinRevisar: integer("sin_revisar", { mode: "boolean" })
+      .notNull()
+      .default(false),
   },
   (table) => [
     uniqueIndex("gastos_comprobante_unico")

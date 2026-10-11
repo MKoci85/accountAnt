@@ -36,6 +36,8 @@ export type LineaDesdeTicket = {
   itemCatalogo: ItemCatalogoConCategoria | null;
   categoriaSugerida: Categoria | null;
   bloqueada: boolean;
+  /** Marca heredada de la última compra del ítem en ese comercio. */
+  esHormiga?: boolean;
 };
 
 export function EscanerComprobante({
@@ -122,7 +124,7 @@ export function EscanerComprobante({
       tipoCfe: resultado.datosQR.tipoCfe,
       serie: resultado.datosQR.serie,
       numero: resultado.datosQR.numero,
-      fecha: resultado.fechaISO,
+      fecha: resultado.fechaISO ?? "",
       total: resultado.total,
       avisoMoneda: resultado.avisoMoneda,
       lineas: resultado.items.map((item) => ({
