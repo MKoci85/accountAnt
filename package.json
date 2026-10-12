@@ -9,6 +9,7 @@
     "start": "next start",
     "serve": "npm run build && npm start",
     "webhook": "node webhook/servidor.mjs",
+    "servicio": "node scripts/servicio.mjs",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",

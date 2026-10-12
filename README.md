@@ -164,6 +164,7 @@ npm run build            # build de producción
 npm start                 # sirve el build de producción
 npm run serve             # build + start, en un solo comando
 npm run webhook           # proceso aparte que recibe el webhook de WhatsApp (ver más abajo)
+npm run servicio          # la app (ya compilada) y el webhook juntos: lo que ejecuta un servicio del sistema
 npm run lint              # ESLint
 npx tsc --noEmit          # chequeo de tipos
 npm test                  # tests unitarios (Vitest)
@@ -257,7 +258,7 @@ tailscale funnel --bg --https=8443 http://127.0.0.1:8787
 tailscale funnel status
 ```
 
-Tiene que quedar corriendo junto con la app (`npm run serve`); el resto de la app sigue en el 443 de `tailscale serve`, que sólo ven tus dispositivos. Si la app está en otro puerto u otra máquina de la tailnet, `WEBHOOK_DESTINO` dice a dónde reenviar (por defecto `http://127.0.0.1:3000/api/whatsapp`) y `WEBHOOK_PUERTO` cambia el puerto de escucha.
+Tiene que quedar corriendo junto con la app (`npm run serve`). `npm run servicio` levanta los dos de una vez sobre un build ya hecho, y si uno se cae corta el otro y termina con error — pensado para que un único servicio del sistema los reinicie juntos, en vez de mantener un servicio por proceso; el resto de la app sigue en el 443 de `tailscale serve`, que sólo ven tus dispositivos. Si la app está en otro puerto u otra máquina de la tailnet, `WEBHOOK_DESTINO` dice a dónde reenviar (por defecto `http://127.0.0.1:3000/api/whatsapp`) y `WEBHOOK_PUERTO` cambia el puerto de escucha.
 
 Comprobarlo desde fuera de la tailnet (por ejemplo con los datos del celular): `https://<tu-maquina>.<tailnet>.ts.net:8443/api/whatsapp` tiene que responder **403** (la ruta existe y rechaza un pedido sin token), y cualquier otra ruta en ese puerto tiene que responder **404** vacío.
 
@@ -273,6 +274,23 @@ En la app de Meta, *WhatsApp → Configuración → Webhooks*:
 "Verificar y guardar", y después suscribirse al campo **`messages`**.
 
 Mientras la app de Meta no esté **publicada** (modo activo), Meta sólo entrega los webhooks de prueba del panel: las fotos reales no llegan. Para publicarla pide completar la configuración básica (en particular una URL de política de privacidad).
+
+**La cuenta de WhatsApp Business también tiene que estar suscrita a la app**, y eso es aparte de lo anterior: el webhook puede estar verificado y con `messages` activo sin que Meta le mande nada, porque la cuenta no sabe que sus eventos van a esa app. El panel a veces lo hace solo y a veces no. Se consulta y se corrige con el token del paso 1 y el **identificador de la cuenta de WhatsApp Business** (en *WhatsApp → Configuración de la API*, debajo del identificador del número):
+
+```bash
+curl -H "Authorization: Bearer <token>" https://graph.facebook.com/<id-de-la-cuenta>/subscribed_apps          # tiene que listar tu app
+curl -X POST -H "Authorization: Bearer <token>" https://graph.facebook.com/<id-de-la-cuenta>/subscribed_apps  # la suscribe
+```
+
+### Si no llega nada
+
+"Probar conexión" sólo comprueba la salida (la app hablándole a Meta); que entren mensajes es otro camino. En orden:
+
+1. **"Meta respondió 401 … Session has expired"**: venció el token. Generar uno de usuario del sistema sin vencimiento (paso 1.3) y pegarlo en ajustes.
+2. **El registro de Ajustes → WhatsApp no muestra el mensaje**: no llegó a la app. Un número no autorizado igual queda anotado como ignorado, así que no es la lista de números. Revisar que `npm run webhook` y Funnel estén andando (el 403 de más arriba), que el campo `messages` esté suscrito, y que la cuenta esté suscrita a la app (`subscribed_apps`).
+3. **El mensaje figura pero no hay respuesta**: mirar qué dice el registro; por defecto sólo se contesta cuando hay algo para hacer.
+
+Las fotos mandadas mientras la cuenta no estaba suscrita no llegan después: Meta nunca intentó entregarlas, hay que mandarlas de nuevo.
 
 ### Cómo se comporta
 
