@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { mensajesWhatsapp } from "@/db/schema";
 import { borrarConfig, escribirConfig, leerConfig } from "@/lib/config-server";
 import { recibirImagen } from "@/lib/entrantes-recepcion";
+import { registrarFallas } from "@/lib/entrantes-server";
 import {
   MODOS_RESPUESTA,
   PREFIJO_REINTENTO,
@@ -174,6 +175,16 @@ async function desenlaceDe(
   try {
     imagen = await descargarImagen(config, mensaje.mediaId);
   } catch (e) {
+    registrarFallas(
+      [
+        {
+          paso: "Descarga de la foto desde Meta",
+          detalle: e instanceof Error ? e.message : "error desconocido",
+        },
+      ],
+      "whatsapp",
+      mensaje.id
+    );
     // En un reintento, que Meta ya no entregue el archivo es lo esperable: lo
     // único que sirve decir es que hay que mandarla otra vez.
     return {
@@ -185,7 +196,7 @@ async function desenlaceDe(
   }
 
   try {
-    const r = await recibirImagen(imagen, "whatsapp");
+    const r = await recibirImagen(imagen, "whatsapp", mensaje.id);
     if (!r.ok) return { tipo: "problema", motivo: r.mensaje };
     if (r.destino === "gasto") {
       return { tipo: "guardado", comercio: r.comercio, total: r.total };

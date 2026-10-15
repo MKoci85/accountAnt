@@ -68,3 +68,21 @@ export const mensajesWhatsapp = sqliteTable("mensajes_whatsapp", {
   mediaId: text("media_id"),
   resultado: text("resultado"), // null = todavía procesando (o interrumpido)
 });
+
+export const ORIGENES_ERROR_RECEPCION = ["whatsapp", "subida", "reintento"] as const;
+
+/**
+ * Cada falla al recibir o leer un comprobante, aunque la lectura después se
+ * haya recuperado por otro camino: un modelo de IA que no contestó y otro que
+ * sí deja un comprobante bien leído y ningún rastro de por qué. Es un registro
+ * para diagnosticar, no estado: nada lo lee para decidir. Sin FK al mensaje de
+ * WhatsApp, para que sobreviva a todo.
+ */
+export const erroresRecepcion = sqliteTable("errores_recepcion", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ocurridoEn: text("ocurrido_en").notNull(),
+  origen: text("origen", { enum: ORIGENES_ERROR_RECEPCION }).notNull(),
+  mensajeWhatsappId: text("mensaje_whatsapp_id"),
+  paso: text("paso").notNull(),
+  detalle: text("detalle").notNull(),
+});

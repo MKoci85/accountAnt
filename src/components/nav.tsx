@@ -8,6 +8,7 @@ import {
   BarChart3,
   Settings2,
   CreditCard,
+  Inbox,
   Repeat,
   SlidersHorizontal,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import {
 const links = [
   { href: "/", label: "Inicio", icon: LayoutDashboard },
   { href: "/gastos", label: "Gastos", icon: Receipt },
+  { href: "/bandeja", label: "Bandeja", icon: Inbox },
   { href: "/gastos-fijos", label: "Fijos", icon: Repeat },
   { href: "/estado-cuenta", label: "Tarjeta", icon: CreditCard },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
@@ -22,7 +24,9 @@ const links = [
   { href: "/ajustes", label: "Ajustes", icon: SlidersHorizontal },
 ];
 
-const linksMobile = links.filter((l) => l.href !== "/ajustes");
+const linksMobile = links.filter(
+  (l) => l.href !== "/ajustes" && l.href !== "/bandeja"
+);
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";

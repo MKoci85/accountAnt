@@ -13,6 +13,8 @@ import {
 import {
   guardarImagenEntrante,
   leerImagenEntrante,
+  registrarFallas,
+  type FallaRecepcion,
 } from "@/lib/entrantes-server";
 import { buscarQREnImagen, imagenParaIA } from "@/lib/imagen-servidor";
 import {
@@ -90,14 +92,27 @@ function unirAvisos(...avisos: (string | null | undefined)[]): string | null {
 async function leerDesdeQR(
   qrTexto: string,
   lectura: "qr" | "link",
+  fallas: FallaRecepcion[],
   avisoPrevio: string | null = null
 ): Promise<Lectura> {
-  const r = await consultarCFE(qrTexto);
+  const r = await consultarCFE(qrTexto).catch(
+    (e): Awaited<ReturnType<typeof consultarCFE>> => ({
+      ok: false,
+      error: e instanceof Error ? e.message : "error desconocido",
+    })
+  );
   if (!r.ok) {
+    fallas.push({
+      paso: lectura === "link" ? "Validación en DGI del link leído con IA" : "Validación del QR en DGI",
+      detalle: r.error,
+    });
     return { ...LECTURA_VACIA, lectura, qrTexto, error: r.error };
   }
 
   const { resultado } = r;
+  if (resultado.errorProveedor) {
+    fallas.push({ paso: "Detalle del proveedor de CFE", detalle: resultado.errorProveedor });
+  }
   return {
     estado: "pendiente",
     lectura,
@@ -136,7 +151,11 @@ async function leerDesdeQR(
  * queda guardada y se puede abrir, así que mandarla a un tercero es decisión
  * del usuario y no algo que pase solo.
  */
-async function completarItemsConIA(lectura: Lectura, imagen: Buffer): Promise<Lectura> {
+async function completarItemsConIA(
+  lectura: Lectura,
+  imagen: Buffer,
+  fallas: FallaRecepcion[]
+): Promise<Lectura> {
   if (lectura.estado !== "pendiente" || parsearItemsEntrante(lectura.itemsJson).length) {
     return lectura;
   }
@@ -149,8 +168,10 @@ async function completarItemsConIA(lectura: Lectura, imagen: Buffer): Promise<Le
     ok: false,
     error: e instanceof Error ? e.message : "error desconocido",
   }));
+  if (ticket.aviso) fallas.push({ paso: "Ítems leídos con IA", detalle: ticket.aviso });
   if (!ticket.ok || !ticket.ticket?.items.length) {
     const motivo = ticket.ok ? "no encontró ninguno" : (ticket.error ?? "sin detalle");
+    fallas.push({ paso: "Ítems leídos con IA", detalle: motivo });
     return {
       ...lectura,
       aviso: unirAvisos(
@@ -176,20 +197,45 @@ async function completarItemsConIA(lectura: Lectura, imagen: Buffer): Promise<Le
  * QR, link de DGI impreso (leído por IA y validado igual que un QR), y recién
  * al final el ticket entero leído por IA.
  */
-async function leerImagen(imagen: Buffer): Promise<Lectura> {
-  const qr = await buscarQREnImagen(imagen).catch(() => null);
-  if (qr) return completarItemsConIA(await leerDesdeQR(qr, "qr"), imagen);
+async function leerImagen(imagen: Buffer, fallas: FallaRecepcion[]): Promise<Lectura> {
+  const qr = await buscarQREnImagen(imagen).catch((e) => {
+    fallas.push({
+      paso: "Búsqueda del QR en la foto",
+      detalle: e instanceof Error ? e.message : "error desconocido",
+    });
+    return null;
+  });
+  if (qr) return completarItemsConIA(await leerDesdeQR(qr, "qr", fallas), imagen, fallas);
 
   const fuente = { tipo: "imagen" as const, ...(await imagenParaIA(imagen)) };
 
-  const link = await interpretarLinkCfeConIA(fuente);
+  const link = await interpretarLinkCfeConIA(fuente).catch(
+    (e): Awaited<ReturnType<typeof interpretarLinkCfeConIA>> => ({
+      ok: false,
+      error: e instanceof Error ? e.message : "error desconocido",
+    })
+  );
+  if (!link.ok) {
+    fallas.push({ paso: "Link de DGI leído con IA", detalle: link.error ?? "sin detalle" });
+  } else if (link.aviso) {
+    fallas.push({ paso: "Link de DGI leído con IA", detalle: link.aviso });
+  }
   if (link.ok && link.link) {
-    const desdeLink = await leerDesdeQR(link.link, "link", link.aviso ?? null);
-    if (desdeLink.estado === "pendiente") return completarItemsConIA(desdeLink, imagen);
+    const desdeLink = await leerDesdeQR(link.link, "link", fallas, link.aviso ?? null);
+    if (desdeLink.estado === "pendiente") {
+      return completarItemsConIA(desdeLink, imagen, fallas);
+    }
   }
 
-  const ticket = await interpretarTicket(fuente);
+  const ticket = await interpretarTicket(fuente).catch(
+    (e): Awaited<ReturnType<typeof interpretarTicket>> => ({
+      ok: false,
+      error: e instanceof Error ? e.message : "error desconocido",
+    })
+  );
+  if (ticket.aviso) fallas.push({ paso: "Ticket leído con IA", detalle: ticket.aviso });
   if (!ticket.ok || !ticket.ticket) {
+    fallas.push({ paso: "Ticket leído con IA", detalle: ticket.error ?? "sin detalle" });
     return {
       ...LECTURA_VACIA,
       error: ticket.error ?? "No se pudo leer el comprobante de la foto.",
@@ -362,9 +408,29 @@ async function guardarSiNoHayNadaQueRevisar(
  */
 export async function recibirImagen(
   imagen: Buffer,
-  canal: CanalEntrante
+  canal: CanalEntrante,
+  mensajeWhatsappId: string | null = null
 ): Promise<ResultadoRecepcion> {
-  const lectura = await leerImagen(imagen);
+  const fallas: FallaRecepcion[] = [];
+  try {
+    return await recibirLeyendo(imagen, canal, fallas);
+  } catch (e) {
+    fallas.push({
+      paso: "Recepción",
+      detalle: e instanceof Error ? e.message : "error desconocido",
+    });
+    throw e;
+  } finally {
+    registrarFallas(fallas, canal === "whatsapp" ? "whatsapp" : "subida", mensajeWhatsappId);
+  }
+}
+
+async function recibirLeyendo(
+  imagen: Buffer,
+  canal: CanalEntrante,
+  fallas: FallaRecepcion[]
+): Promise<ResultadoRecepcion> {
+  const lectura = await leerImagen(imagen, fallas);
 
   const repetido = await comprobanteRepetido(lectura);
   if (repetido) return repetido;
@@ -377,10 +443,11 @@ export async function recibirImagen(
     // Si el guardado falla por lo que sea, el comprobante no se pierde: cae a
     // la bandeja como cualquier otro.
     const intento = await guardarSiNoHayNadaQueRevisar(lectura).catch(
-      (e): { guardado: false; motivo: string } => ({
-        guardado: false,
-        motivo: e instanceof Error ? e.message : "No se pudo guardar solo.",
-      })
+      (e): { guardado: false; motivo: string } => {
+        const motivo = e instanceof Error ? e.message : "No se pudo guardar solo.";
+        fallas.push({ paso: "Guardado automático", detalle: motivo });
+        return { guardado: false, motivo };
+      }
     );
     if (intento.guardado) {
       return {
@@ -430,18 +497,24 @@ export async function reprocesarEntrante(
     ? await leerImagenEntrante(entrante.imagenRuta)
     : null;
 
+  const fallas: FallaRecepcion[] = [];
   let lectura: Lectura;
-  if (entrante.qrTexto) {
-    lectura = await leerDesdeQR(
-      entrante.qrTexto,
-      entrante.lectura === "link" ? "link" : "qr"
-    );
-    if (imagen) lectura = await completarItemsConIA(lectura, imagen);
-  } else if (entrante.imagenRuta) {
-    if (!imagen) return { ok: false, error: "No se encontró la foto guardada." };
-    lectura = await leerImagen(imagen);
-  } else {
-    return { ok: false, error: "No hay foto ni QR para volver a leer." };
+  try {
+    if (entrante.qrTexto) {
+      lectura = await leerDesdeQR(
+        entrante.qrTexto,
+        entrante.lectura === "link" ? "link" : "qr",
+        fallas
+      );
+      if (imagen) lectura = await completarItemsConIA(lectura, imagen, fallas);
+    } else if (entrante.imagenRuta) {
+      if (!imagen) return { ok: false, error: "No se encontró la foto guardada." };
+      lectura = await leerImagen(imagen, fallas);
+    } else {
+      return { ok: false, error: "No hay foto ni QR para volver a leer." };
+    }
+  } finally {
+    registrarFallas(fallas, "reintento");
   }
 
   const repetido = await comprobanteRepetido(lectura, id);

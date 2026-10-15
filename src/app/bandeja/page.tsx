@@ -1,11 +1,16 @@
 import { listarEntrantes } from "@/app/actions/entrantes";
 import { BandejaView } from "@/components/bandeja-view";
+import { RegistroRecepcion } from "@/components/registro-recepcion";
 import { PageContainer } from "@/components/page-container";
+import { listarRegistroRecepcion } from "@/lib/entrantes-server";
 
 export const dynamic = "force-dynamic";
 
 export default async function BandejaPage() {
-  const entrantes = await listarEntrantes();
+  const [entrantes, eventos] = await Promise.all([
+    listarEntrantes(),
+    listarRegistroRecepcion(),
+  ]);
 
   return (
     <PageContainer maxWidth="3xl">
@@ -19,6 +24,7 @@ export default async function BandejaPage() {
         </p>
       </div>
       <BandejaView entrantes={entrantes} />
+      <RegistroRecepcion eventos={eventos} />
     </PageContainer>
   );
 }

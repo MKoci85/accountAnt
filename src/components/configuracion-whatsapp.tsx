@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { MessageCircle, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -204,7 +205,10 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
           manda ningún mensaje.{" "}
           {inicial.ultimoMensaje
             ? `Último mensaje recibido: ${new Date(inicial.ultimoMensaje.recibidoEn).toLocaleString("es-UY")} — ${inicial.ultimoMensaje.resultado ?? "procesando"}.`
-            : "Todavía no llegó ningún mensaje."}
+            : "Todavía no llegó ningún mensaje."}{" "}
+          <Link href="/bandeja#registro" className="text-primary underline-offset-2 hover:underline">
+            Ver el registro de recepción
+          </Link>
         </p>
         {inicial.interrumpidos > 0 && (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 px-3.5 py-3">

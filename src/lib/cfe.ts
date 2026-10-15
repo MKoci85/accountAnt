@@ -1,6 +1,7 @@
 import { leerAjuste } from "@/lib/config-server";
 import { esFechaISOValida } from "@/lib/formato";
 import type { FormatoProveedorCfe } from "@/lib/procesadores";
+import { agruparEnFilas, extraerFragmentosPorGlifo } from "@/lib/pdf";
 import { extractText, getDocumentProxy } from "unpdf";
 
 export type DatosQR = {
@@ -279,6 +280,8 @@ function consultarSegunFormato(
       return consultarFacturalista(urlBase, datos);
     case "ijserv":
       return consultarIjserv(urlBase, datos);
+    case "odoo":
+      return consultarOdoo(urlBase, datos);
     default:
       throw new Error(
         "Este proveedor de CFE todavía no tiene consulta automática implementada"
@@ -451,33 +454,63 @@ export function parsearComprobanteTaface(html: string): DetalleComprobante {
   const total = totalTexto ? parsearMontoUY(totalTexto) : null;
   const moneda = campoTaface(html, "span_vTOTTPOMONEDA");
 
-  const items: ItemComprobante[] = filas
+  const lineas = filas
     .filter((fila) => fila.length >= 9)
     .map((fila) => {
       const [, ivaPctCrudo, articuloCrudo, , cantidadCruda, um, precioUnitarioCrudo, , montoCrudo] =
         fila;
-      const { nombre, tamano, unidades } = parsearNombreItem(
-        articuloCrudo.replace(/^\s*\d+\s*-\s*/, "")
-      );
       const cantidad = Number(cantidadCruda.replace(",", "."));
-      const esPeso =
-        um.trim().toUpperCase() === "KG" &&
-        Number.isFinite(cantidad) &&
-        cantidad > 0;
-      const conIva = conIvaDeLinea(ivaPctCrudo);
-
       return {
-        nombre,
-        tamano,
-        unidades,
-        precio: conIva(parsearMontoUY(montoCrudo)),
-        pesoTicket: esPeso ? cantidad : null,
-        precioPorKiloTicket: esPeso ? conIva(parsearMontoUY(precioUnitarioCrudo)) : null,
+        ...parsearNombreItem(articuloCrudo.replace(/^\s*\d+\s*-\s*/, "")),
+        conIva: conIvaDeLinea(ivaPctCrudo),
+        monto: parsearMontoUY(montoCrudo),
+        precioUnitario: parsearMontoUY(precioUnitarioCrudo),
+        cantidad,
+        esPeso:
+          um.trim().toUpperCase() === "KG" &&
+          Number.isFinite(cantidad) &&
+          cantidad > 0,
       };
-    })
+    });
+
+  const sumarIva = lineasSinIvaTaface(
+    lineas.map((l) => ({ monto: l.monto, conIva: l.conIva(l.monto) })),
+    total
+  );
+  const importe = (l: (typeof lineas)[number], valor: number) =>
+    sumarIva ? l.conIva(valor) : valor;
+
+  const items: ItemComprobante[] = lineas
+    .map((l) => ({
+      nombre: l.nombre,
+      tamano: l.tamano,
+      unidades: l.unidades,
+      precio: importe(l, l.monto),
+      pesoTicket: l.esPeso ? l.cantidad : null,
+      precioPorKiloTicket: l.esPeso ? importe(l, l.precioUnitario) : null,
+    }))
     .filter((item) => item.precio > 0);
 
   return { emisorNombre, direccion, items, total, moneda };
+}
+
+/**
+ * Decide si los importes de línea de un comprobante de TA-Face vienen sin IVA.
+ * Depende del comercio: hay emisores que mandan cada línea neta y otros que la
+ * mandan con IVA incluido, y el HTML no lo dice. Se elige la lectura cuya suma
+ * queda más cerca del total del comprobante; sin total, se asume sin IVA.
+ * @param lineas importe de cada línea tal como vino y con su IVA sumado
+ * @param total total del comprobante, o null si no se pudo leer
+ * @returns true si hay que sumarle el IVA a cada línea
+ */
+export function lineasSinIvaTaface(
+  lineas: { monto: number; conIva: number }[],
+  total: number | null
+): boolean {
+  if (total === null || !Number.isFinite(total)) return true;
+  const sumaTalCual = lineas.reduce((acc, l) => acc + l.monto, 0);
+  const sumaConIva = lineas.reduce((acc, l) => acc + l.conIva, 0);
+  return Math.abs(total - sumaConIva) < Math.abs(total - sumaTalCual);
 }
 
 function conIvaDeLinea(ivaPctCrudo: string): (montoNeto: number) => number {
@@ -823,6 +856,138 @@ export function parsearComprobantePdfIjserv(texto: string): DetalleComprobante {
 
   if (items.length === 0) {
     throw new Error("Comprobante no encontrado en iJServ");
+  }
+
+  return { emisorNombre, direccion, items, total, moneda };
+}
+
+async function consultarOdoo(
+  urlBase: string,
+  datos: DatosQR
+): Promise<DetalleComprobante> {
+  const body = new URLSearchParams({
+    rut: datos.ruc,
+    serie: datos.serie,
+    nro: datos.numero,
+    amount: datos.monto,
+    code: datos.hash.slice(0, 6),
+  });
+
+  const res = await pedir(urlBase.split("?")[0], {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    throw new Error(`El procesador respondió ${res.status}`);
+  }
+
+  if (!(res.headers.get("content-type") ?? "").includes("application/pdf")) {
+    throw new Error("Comprobante no encontrado en el POS del comercio");
+  }
+
+  const fragmentos = await extraerFragmentosPorGlifo(await res.arrayBuffer());
+  const filas = agruparEnFilas(
+    fragmentos.map((f) => ({ ...f, texto: sinTextoDuplicado(f.texto) }))
+  );
+
+  return parsearComprobantePdfOdoo(filas.map((f) => f.texto).join("\n"));
+}
+
+/**
+ * Deshace la negrita simulada imprimiendo el mismo texto dos veces seguidas
+ * ("CANTCANT"), que es como llegan las etiquetas del PDF del POS de Odoo.
+ * @param texto contenido de un objeto de texto del PDF
+ * @returns el texto una sola vez si eran dos copias idénticas, si no tal cual
+ */
+export function sinTextoDuplicado(texto: string): string {
+  if (texto.length < 2 || texto.length % 2 !== 0) return texto;
+  const mitad = texto.slice(0, texto.length / 2);
+  return mitad + mitad === texto ? mitad : texto;
+}
+
+const ENCABEZADO_ITEMS_ODOO = /^CANT\s+ART[IÍ]CULO\s+PRECIO\s+DTO\s+TOTAL$/i;
+
+const NUMERO_ODOO = String.raw`-?\d+(?:\.\d+)?`;
+
+const FILA_ITEM_ODOO = new RegExp(
+  String.raw`^(${NUMERO_ODOO})\s+(.+?)\s+${NUMERO_ODOO}(?:\s+${NUMERO_ODOO})?\s+(${NUMERO_ODOO})$`
+);
+
+const FIN_ITEMS_ODOO = /^(NETO|SUBTOTAL|TOTAL)\b/i;
+
+/**
+ * Parsea el texto del PDF que devuelve `/pos/preview` del POS de Odoo, ya
+ * armado por filas con `extraerFragmentosPorGlifo` y sin la negrita duplicada.
+ * @param texto una fila del ticket por línea
+ * @returns detalle del comprobante
+ */
+export function parsearComprobantePdfOdoo(texto: string): DetalleComprobante {
+  const lineas = texto
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const inicioItems = lineas.findIndex((l) => ENCABEZADO_ITEMS_ODOO.test(l));
+  if (inicioItems === -1) {
+    throw new Error("El PDF del POS no tiene el formato esperado");
+  }
+
+  const indiceRut = lineas.findIndex((l) => /^.+?\s+RUT\s+\d+$/i.test(l));
+  const emisorNombre =
+    lineas[indiceRut]?.match(/^(.+?)\s+RUT\s+\d+$/i)?.[1] ??
+    "Comercio desconocido";
+  const direccion =
+    indiceRut > 1 ? lineas.slice(1, indiceRut).join(", ") : null;
+
+  const moneda = mapearMonedaUcfe(
+    lineas.find((l) => /^MONEDA:/i.test(l))?.replace(/^MONEDA:\s*/i, "")
+  );
+
+  const totalCrudo = lineas
+    .find((l) => /^TOTAL\s+[\d.]+\s*\$?$/i.test(l))
+    ?.match(/^TOTAL\s+([\d.]+)/i)?.[1];
+  const total = totalCrudo ? Number(totalCrudo) : null;
+
+  const filas: { cantidad: number; codigo: string; monto: number; descripcion: string[] }[] = [];
+  for (let i = inicioItems + 1; i < lineas.length; i++) {
+    const linea = lineas[i];
+    if (FIN_ITEMS_ODOO.test(linea)) break;
+
+    const match = linea.match(FILA_ITEM_ODOO);
+    if (match) {
+      const [, cantidad, codigo, monto] = match;
+      filas.push({
+        cantidad: Number(cantidad),
+        codigo,
+        monto: Number(monto),
+        descripcion: [],
+      });
+    } else {
+      filas.at(-1)?.descripcion.push(linea);
+    }
+  }
+
+  const items: ItemComprobante[] = filas
+    .filter((f) => Number.isFinite(f.monto) && f.monto > 0)
+    .map((f) => {
+      const { nombre, tamano, unidades } = parsearNombreItem(
+        f.descripcion.join(" ") || f.codigo
+      );
+      return {
+        nombre,
+        tamano,
+        unidades:
+          Number.isInteger(f.cantidad) && f.cantidad > 0 ? f.cantidad : unidades,
+        precio: f.monto,
+        pesoTicket: null,
+        precioPorKiloTicket: null,
+      };
+    });
+
+  if (items.length === 0) {
+    throw new Error("Comprobante no encontrado en el POS del comercio");
   }
 
   return { emisorNombre, direccion, items, total, moneda };

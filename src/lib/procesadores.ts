@@ -4,6 +4,7 @@ export const FORMATOS_PROVEEDOR_CFE = [
   "ucfe",
   "facturalista",
   "ijserv",
+  "odoo",
   "sicfe",
   "otro",
 ] as const;
@@ -47,6 +48,12 @@ export const PROCESADORES_CONOCIDOS: Procesador[] = [
     nombre: "iJServ",
     soportado: true,
     urlEjemplo: "https://www.ijserv.com/eFactura",
+  },
+  {
+    id: "odoo",
+    nombre: "Odoo POS (/pos/preview)",
+    soportado: true,
+    urlEjemplo: "https://pos.laisla.com.uy/pos/preview",
   },
   { id: "sicfe", nombre: "SICFE / FEMI", soportado: false },
 ];

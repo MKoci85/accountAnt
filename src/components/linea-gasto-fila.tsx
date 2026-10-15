@@ -164,7 +164,33 @@ export function LineaGastoFila({
               }
               onCrearNuevo={() => onCrearItemParaLinea(linea)}
             />
+            {vieneDelTicket && (
+              <button
+                type="button"
+                title="Se guarda con este nombre como texto libre, sin crear un ítem en el catálogo ni compararse precios"
+                onClick={() =>
+                  actualizarLinea(linea.key, { sinCatalogo: true })
+                }
+                className="mt-1 text-[11px] font-medium text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+              >
+                No catalogar, guardar como texto libre
+              </button>
+            )}
           </>
+        )}
+        {linea.sinCatalogo && linea.origenTicket && linea.item.id <= 0 && (
+          <div className="mt-0.5 text-[11.5px] text-muted-foreground">
+            Del ticket, sin catálogo —{" "}
+            <button
+              type="button"
+              onClick={() =>
+                actualizarLinea(linea.key, { sinCatalogo: false })
+              }
+              className="font-medium text-primary hover:underline"
+            >
+              catalogar
+            </button>
+          </div>
         )}
         {!nombreEditable && (
           <div className="mt-0.5 text-[11.5px] text-muted-foreground">

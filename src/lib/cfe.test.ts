@@ -9,6 +9,10 @@ const {
   parsearNombreItem,
   parsearComprobantePdfFacturalista,
   parsearComprobantePdfIjserv,
+  parsearComprobantePdfOdoo,
+  sinTextoDuplicado,
+  parsearComprobanteTaface,
+  lineasSinIvaTaface,
   parsearItemsPdfUcfe,
   parsearMontoFlexible,
   parsearResultadoUcfe,
@@ -294,6 +298,172 @@ describe("parsearComprobantePdfIjserv", () => {
     expect(() => parsearComprobantePdfIjserv("otra cosa")).toThrow(
       /formato esperado/i
     );
+  });
+});
+
+function htmlTaface(filas: string[][], total: string): string {
+  return [
+    `<span id="span_vEMIRZNSOC">Comercio SA</span>`,
+    `<span id="span_vTOTMNTTOTAL">${total}</span>`,
+    `<input type="hidden" name="Grid1ContainerDataV" value='${JSON.stringify(filas)}'/>`,
+  ].join("\n");
+}
+
+describe("parsearComprobanteTaface", () => {
+  it("le suma el IVA a cada línea cuando vienen netas", () => {
+    const html = htmlTaface(
+      [
+        ["1", "22.000%", "Galletitas", "", "1,00", "UNID", "177,87", "0,00", "177,87"],
+        ["2", "10.000%", "Pan", "", "1,00", "UNID", "50,00", "0,00", "50,00"],
+      ],
+      "272,00"
+    );
+
+    expect(parsearComprobanteTaface(html).items.map((i) => i.precio)).toEqual([
+      217, 55,
+    ]);
+  });
+
+  it("deja los importes como vienen cuando ya incluyen IVA, aunque haya un descuento global", () => {
+    const html = htmlTaface(
+      [
+        ["1", "22.000%", "Bermuda", "", "1,00", "UNID", "1590,00", "0,00", "1590,00"],
+        ["2", "22.000%", "Remera", "", "1,00", "UNID", "499,00", "0,00", "499,00"],
+      ],
+      "1789,00"
+    );
+
+    expect(parsearComprobanteTaface(html).items.map((i) => i.precio)).toEqual([
+      1590, 499,
+    ]);
+  });
+
+  it("aplica el mismo criterio al precio por kilo de una línea pesada", () => {
+    const html = htmlTaface(
+      [["1", "10.000%", "Queso", "", "0,500", "KG", "400,00", "0,00", "200,00"]],
+      "220,00"
+    );
+
+    expect(parsearComprobanteTaface(html).items[0]).toMatchObject({
+      precio: 220,
+      pesoTicket: 0.5,
+      precioPorKiloTicket: 440,
+    });
+  });
+});
+
+describe("lineasSinIvaTaface", () => {
+  it("elige la lectura cuya suma queda más cerca del total", () => {
+    const lineas = [{ monto: 100, conIva: 122 }];
+    expect(lineasSinIvaTaface(lineas, 122)).toBe(true);
+    expect(lineasSinIvaTaface(lineas, 100)).toBe(false);
+    expect(lineasSinIvaTaface(lineas, 90)).toBe(false);
+  });
+
+  it("sin total legible le suma el IVA, como antes", () => {
+    expect(lineasSinIvaTaface([{ monto: 100, conIva: 122 }], null)).toBe(true);
+    expect(lineasSinIvaTaface([{ monto: 100, conIva: 122 }], NaN)).toBe(true);
+  });
+});
+
+const PDF_ODOO = [
+  "MSC CAJA 3",
+  "LUIS ALBERTO DE HERRERA 1290 LOCAL",
+  "MONTEVIDEO SHOPPING",
+  "MONTEVIDEO",
+  "RACKS SAS RUT 214133790013",
+  "www.laisla.com.uy",
+  "TIPO: E-TICKET 101 NRO: 3553155",
+  "SERIE: A PAGO: CONTADO",
+  "CLIENTE: JUAN PEREZ / 1.234.567-8",
+  "FECHA: 14/10/2026 HORA: 12:45:04 PM",
+  "MONEDA: UYU",
+  "CANT ARTÍCULO PRECIO DTO TOTAL",
+  "1.0 1AKMOT-1163-44 1190.0 1190.0",
+  "Ojotas Rip Curl Icons Of Surf Bloom Open Toe",
+  "NETO 975.41 $ SUBTOTAL 1190.0 $",
+  "IVA 214.59 $ DESCUENTO 0.0 $",
+  "TOTAL 1190.0 $",
+  "Master Debito 1190.0 $",
+].join("\n");
+
+describe("parsearComprobantePdfOdoo", () => {
+  it("lee emisor, total, moneda e ítems del PDF", () => {
+    const detalle = parsearComprobantePdfOdoo(PDF_ODOO);
+
+    expect(detalle).toMatchObject({
+      emisorNombre: "RACKS SAS",
+      direccion:
+        "LUIS ALBERTO DE HERRERA 1290 LOCAL, MONTEVIDEO SHOPPING, MONTEVIDEO",
+      total: 1190,
+      moneda: "UYU",
+    });
+    expect(detalle.items).toEqual([
+      {
+        nombre: "Ojotas Rip Curl Icons Of Surf Bloom Open Toe",
+        tamano: null,
+        unidades: 1,
+        precio: 1190,
+        pesoTicket: null,
+        precioPorKiloTicket: null,
+      },
+    ]);
+  });
+
+  it("toma el total de la línea aunque traiga descuento, y junta la descripción partida", () => {
+    const conDescuento = PDF_ODOO.replace(
+      "1.0 1AKMOT-1163-44 1190.0 1190.0\nOjotas Rip Curl Icons Of Surf Bloom Open Toe",
+      [
+        "2.0 REM-001 800.0 160.0 1440.0",
+        "Remera manga corta",
+        "estampada",
+        "1.0 MED-002 250.0 250.0",
+        "Medias",
+      ].join("\n")
+    );
+
+    expect(parsearComprobantePdfOdoo(conDescuento).items).toMatchObject([
+      { nombre: "Remera manga corta estampada", unidades: 2, precio: 1440 },
+      { nombre: "Medias", unidades: 1, precio: 250 },
+    ]);
+  });
+
+  it("usa el código cuando la línea no trae descripción", () => {
+    const sinDescripcion = PDF_ODOO.replace(
+      "Ojotas Rip Curl Icons Of Surf Bloom Open Toe\n",
+      ""
+    );
+
+    expect(parsearComprobantePdfOdoo(sinDescripcion).items[0].nombre).toBe(
+      "1AKMOT-1163-44"
+    );
+  });
+
+  it("no toma el bloque de totales como ítems", () => {
+    const sinItems = PDF_ODOO.replace(
+      "1.0 1AKMOT-1163-44 1190.0 1190.0\nOjotas Rip Curl Icons Of Surf Bloom Open Toe\n",
+      ""
+    );
+
+    expect(() => parsearComprobantePdfOdoo(sinItems)).toThrow(/no encontrado/i);
+  });
+
+  it("rechaza un PDF sin el encabezado de ítems", () => {
+    expect(() => parsearComprobantePdfOdoo("otra cosa")).toThrow(
+      /formato esperado/i
+    );
+  });
+});
+
+describe("sinTextoDuplicado", () => {
+  it("deja una sola copia de la negrita impresa dos veces", () => {
+    expect(sinTextoDuplicado("CANTCANT")).toBe("CANT");
+    expect(sinTextoDuplicado("IVA AL DÍA.IVA AL DÍA.")).toBe("IVA AL DÍA.");
+  });
+
+  it("no toca un texto que no son dos copias idénticas", () => {
+    expect(sinTextoDuplicado("1190.0")).toBe("1190.0");
+    expect(sinTextoDuplicado("TOTAL")).toBe("TOTAL");
   });
 });
 
