@@ -6,7 +6,13 @@ import { db } from "@/db";
 import { emisores, gastosEntrantes } from "@/db/schema";
 import { parsearQR } from "@/lib/cfe";
 import { parsearItemsEntrante } from "@/lib/entrantes";
-import { borrarEntrante, resumenDeBandeja } from "@/lib/entrantes-server";
+import {
+  borrarEntrante,
+  limpiarRegistroRecepcion,
+  listarRegistroRecepcion,
+  resumenDeBandeja,
+  type FiltrosRegistro,
+} from "@/lib/entrantes-server";
 import {
   recibirImagen,
   reprocesarEntrante,
@@ -197,4 +203,14 @@ export async function obtenerEntranteParaRevision(
         item.itemCatalogo !== null && hormigas.has(item.itemCatalogo.id),
     })),
   };
+}
+
+export async function buscarRegistroRecepcion(filtros: FiltrosRegistro) {
+  return listarRegistroRecepcion(filtros);
+}
+
+export async function vaciarRegistroRecepcion() {
+  const borradas = limpiarRegistroRecepcion();
+  revalidatePath("/bandeja");
+  return borradas;
 }

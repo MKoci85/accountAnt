@@ -7,7 +7,7 @@ import { listarRegistroRecepcion } from "@/lib/entrantes-server";
 export const dynamic = "force-dynamic";
 
 export default async function BandejaPage() {
-  const [entrantes, eventos] = await Promise.all([
+  const [entrantes, registro] = await Promise.all([
     listarEntrantes(),
     listarRegistroRecepcion(),
   ]);
@@ -24,7 +24,7 @@ export default async function BandejaPage() {
         </p>
       </div>
       <BandejaView entrantes={entrantes} />
-      <RegistroRecepcion eventos={eventos} />
+      <RegistroRecepcion inicial={registro} />
     </PageContainer>
   );
 }

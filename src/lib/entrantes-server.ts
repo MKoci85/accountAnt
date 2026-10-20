@@ -1,10 +1,30 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { desc, eq } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  notLike,
+  or,
+} from "drizzle-orm";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { db } from "@/db";
 import { erroresRecepcion, gastosEntrantes, mensajesWhatsapp } from "@/db/schema";
 import { leerAjustesBandeja } from "@/lib/config-server";
-import { esDeMesAnterior } from "@/lib/entrantes";
+import {
+  esDeMesAnterior,
+  eventoCoincide,
+  type EventoRecepcion,
+  type FallaRecepcion,
+  type OrigenFallaRecepcion,
+} from "@/lib/entrantes";
+import { PREFIJO_REINTENTO } from "@/lib/whatsapp";
 
 // Almacenamiento de la bandeja: filas y fotos. Deliberadamente sin "use
 // server" (escribe en disco y recibe Buffers) y sin importar ninguna acción:
@@ -79,8 +99,7 @@ export async function borrarEntrante(id: number): Promise<void> {
   if (fila?.imagenRuta) await fs.rm(rutaImagen(fila.imagenRuta), { force: true });
 }
 
-export type FallaRecepcion = { paso: string; detalle: string };
-type OrigenError = (typeof erroresRecepcion.$inferInsert)["origen"];
+type OrigenError = OrigenFallaRecepcion;
 
 /** Deja constancia de las fallas de una recepción. Nunca tira: es un registro. */
 export function registrarFallas(
@@ -99,60 +118,77 @@ export function registrarFallas(
   }
 }
 
-export type EventoRecepcion =
-  | {
-      tipo: "whatsapp";
-      id: string;
-      fecha: string;
-      remitente: string;
-      resultado: string | null;
-      fallas: FallaRecepcion[];
-    }
-  | {
-      tipo: "falla";
-      id: string;
-      fecha: string;
-      origen: OrigenError;
-      falla: FallaRecepcion;
-    };
+export type FiltrosRegistro = {
+  busqueda?: string;
+  /** Fecha local `aaaa-mm-dd`, inclusive. */
+  desde?: string;
+  /** Fecha local `aaaa-mm-dd`, inclusive. */
+  hasta?: string;
+};
+
+export type RegistroRecepcion = { eventos: EventoRecepcion[]; total: number };
+
+function inicioDelDia(fecha: string, diasDespues = 0): string | null {
+  const d = new Date(`${fecha}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + diasDespues);
+  return d.toISOString();
+}
+
+function condicionesDeFecha(columna: AnySQLiteColumn, filtros: FiltrosRegistro) {
+  const desde = filtros.desde ? inicioDelDia(filtros.desde) : null;
+  const hasta = filtros.hasta ? inicioDelDia(filtros.hasta, 1) : null;
+  return and(
+    desde ? gte(columna, desde) : undefined,
+    hasta ? lt(columna, hasta) : undefined
+  );
+}
 
 /**
  * Lo que llegó por WhatsApp y cada falla de lectura, en una sola línea de
- * tiempo. Las fallas de un mensaje van dentro de ese mensaje; las de una foto
- * subida a mano o de un "Volver a leer", sueltas.
+ * tiempo, del más nuevo al más viejo. Las fallas de un mensaje van dentro de
+ * ese mensaje; las de una foto subida a mano o de un "Volver a leer", sueltas.
+ * Las fechas se filtran en la base (por día local) y el texto acá, sin
+ * tildes ni mayúsculas.
+ * @returns Hasta `limite` eventos, y cuántos coincidían en total.
  */
-export async function listarRegistroRecepcion(limite = 30): Promise<EventoRecepcion[]> {
+export async function listarRegistroRecepcion(
+  filtros: FiltrosRegistro = {},
+  limite = 200
+): Promise<RegistroRecepcion> {
   const mensajes = db
     .select()
     .from(mensajesWhatsapp)
-    .orderBy(desc(mensajesWhatsapp.recibidoEn))
-    .limit(limite)
+    .where(condicionesDeFecha(mensajesWhatsapp.recibidoEn, filtros))
     .all();
-  const fallas = db
+  const deMensajes = mensajes.length
+    ? db
+        .select()
+        .from(erroresRecepcion)
+        .where(
+          inArray(
+            erroresRecepcion.mensajeWhatsappId,
+            mensajes.map((m) => m.id)
+          )
+        )
+        .orderBy(asc(erroresRecepcion.id))
+        .all()
+    : [];
+  const sueltas = db
     .select()
     .from(erroresRecepcion)
-    .orderBy(desc(erroresRecepcion.id))
-    .limit(limite * 4)
+    .where(
+      and(
+        isNull(erroresRecepcion.mensajeWhatsappId),
+        condicionesDeFecha(erroresRecepcion.ocurridoEn, filtros)
+      )
+    )
     .all();
 
   const porMensaje = new Map<string, FallaRecepcion[]>();
-  const sueltas: EventoRecepcion[] = [];
-  for (const f of [...fallas].reverse()) {
-    const falla = { paso: f.paso, detalle: f.detalle };
-    if (f.mensajeWhatsappId) {
-      porMensaje.set(f.mensajeWhatsappId, [
-        ...(porMensaje.get(f.mensajeWhatsappId) ?? []),
-        falla,
-      ]);
-    } else {
-      sueltas.push({
-        tipo: "falla",
-        id: `falla-${f.id}`,
-        fecha: f.ocurridoEn,
-        origen: f.origen,
-        falla,
-      });
-    }
+  for (const f of deMensajes) {
+    const id = f.mensajeWhatsappId!;
+    porMensaje.set(id, [...(porMensaje.get(id) ?? []), { paso: f.paso, detalle: f.detalle }]);
   }
 
   const eventos: EventoRecepcion[] = [
@@ -164,7 +200,52 @@ export async function listarRegistroRecepcion(limite = 30): Promise<EventoRecepc
       resultado: m.resultado,
       fallas: porMensaje.get(m.id) ?? [],
     })),
-    ...sueltas,
-  ];
-  return eventos.sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, limite);
+    ...sueltas.map((f) => ({
+      tipo: "falla" as const,
+      id: `falla-${f.id}`,
+      fecha: f.ocurridoEn,
+      origen: f.origen,
+      falla: { paso: f.paso, detalle: f.detalle },
+    })),
+  ]
+    .filter((ev) => eventoCoincide(ev, filtros.busqueda ?? ""))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+  return { eventos: eventos.slice(0, limite), total: eventos.length };
+}
+
+/**
+ * Vacía el registro de recepción. Quedan sólo los mensajes de WhatsApp sin
+ * terminar (y sus fallas): son los que "Reintentar" todavía puede retomar.
+ *
+ * Borrar un mensaje terminado le quita el candado contra una entrega repetida
+ * de Meta, pero eso pasa a los pocos minutos de recibirlo; y un comprobante con
+ * QR igual choca contra `claveComprobante` o el índice único de `gastos`.
+ * @returns Cuántas filas se borraron entre las dos tablas.
+ */
+export function limpiarRegistroRecepcion(): number {
+  return db.transaction((tx) => {
+    const mensajes = tx
+      .delete(mensajesWhatsapp)
+      .where(
+        and(
+          isNotNull(mensajesWhatsapp.resultado),
+          notLike(mensajesWhatsapp.resultado, `${PREFIJO_REINTENTO}%`)
+        )
+      )
+      .run().changes;
+    const fallas = tx
+      .delete(erroresRecepcion)
+      .where(
+        or(
+          isNull(erroresRecepcion.mensajeWhatsappId),
+          notInArray(
+            erroresRecepcion.mensajeWhatsappId,
+            tx.select({ id: mensajesWhatsapp.id }).from(mensajesWhatsapp)
+          )
+        )
+      )
+      .run().changes;
+    return mensajes + fallas;
+  });
 }

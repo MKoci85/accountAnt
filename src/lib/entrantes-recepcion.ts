@@ -8,13 +8,13 @@ import {
   claveComprobante,
   motivoDeRevision,
   parsearItemsEntrante,
+  type FallaRecepcion,
   type ItemEntrante,
 } from "@/lib/entrantes";
 import {
   guardarImagenEntrante,
   leerImagenEntrante,
   registrarFallas,
-  type FallaRecepcion,
 } from "@/lib/entrantes-server";
 import { buscarQREnImagen, imagenParaIA } from "@/lib/imagen-servidor";
 import {

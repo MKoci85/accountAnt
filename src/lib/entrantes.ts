@@ -1,4 +1,6 @@
+import type { ORIGENES_ERROR_RECEPCION } from "@/db/schema";
 import type { DatosQR } from "@/lib/cfe";
+import { normalizarTextoComparable } from "@/lib/duplicados";
 import { aISO } from "@/lib/formato";
 
 /** Un ítem tal como vino del comprobante, antes de buscarlo en el catálogo. */
@@ -191,4 +193,46 @@ export function entrantesEnConflicto(
         ]
       : [];
   });
+}
+
+export type FallaRecepcion = { paso: string; detalle: string };
+export type OrigenFallaRecepcion = (typeof ORIGENES_ERROR_RECEPCION)[number];
+
+export type EventoRecepcion =
+  | {
+      tipo: "whatsapp";
+      id: string;
+      fecha: string;
+      remitente: string;
+      resultado: string | null;
+      fallas: FallaRecepcion[];
+    }
+  | {
+      tipo: "falla";
+      id: string;
+      fecha: string;
+      origen: OrigenFallaRecepcion;
+      falla: FallaRecepcion;
+    };
+
+/**
+ * Si un evento del registro de recepción responde a la búsqueda: cada palabra
+ * tiene que aparecer en algún lado (canal, número, resultado o fallas), sin
+ * importar mayúsculas ni tildes. Una búsqueda vacía coincide con todo.
+ */
+export function eventoCoincide(evento: EventoRecepcion, busqueda: string): boolean {
+  const palabras = normalizarTextoComparable(busqueda).split(" ").filter(Boolean);
+  if (!palabras.length) return true;
+
+  const partes =
+    evento.tipo === "whatsapp"
+      ? [
+          "whatsapp",
+          evento.remitente,
+          evento.resultado,
+          ...evento.fallas.flatMap((f) => [f.paso, f.detalle]),
+        ]
+      : [evento.origen, evento.falla.paso, evento.falla.detalle];
+  const texto = normalizarTextoComparable(partes.filter(Boolean).join(" "));
+  return palabras.every((p) => texto.includes(p));
 }
