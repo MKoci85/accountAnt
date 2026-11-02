@@ -313,6 +313,12 @@ export const AJUSTES = {
     nombre: "La ventana de meses",
     revalidar: ["/reportes", "/gastos"],
   },
+  umbralCompraEnCuotas: {
+    clave: "cuotas_umbral_pregunta",
+    porDefecto: 5000,
+    nombre: "El importe para preguntar por cuotas",
+    revalidar: ["/gastos", "/bandeja"],
+  },
   bcuDiasHaciaAtras: {
     clave: "bcu_dias_hacia_atras",
     porDefecto: 7,

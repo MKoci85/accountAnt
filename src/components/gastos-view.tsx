@@ -38,6 +38,14 @@ import {
   BorrarGastoAccion,
 } from "@/components/gasto-row-acciones";
 
+function etiquetaCuotas(g: GastoResumen) {
+  if (g.enCuotas) {
+    return `en ${g.enCuotas.cantidad} cuotas, ${g.enCuotas.pagadas} cobradas · no suma, suman sus cuotas`;
+  }
+  if (g.cuotaDe) return `cuota ${g.cuotaDe.numero} de ${g.cuotaDe.cantidad}`;
+  return null;
+}
+
 function notaGasto(g: GastoResumen) {
   if (g.sinRevisar) return "guardado solo, sin revisar";
   if (g.emisorPendiente) return "comercio pendiente de mapear";
@@ -150,7 +158,10 @@ export function GastosView({
 
   const gruposCombinables = useMemo(() => {
     const porId = new Map(gastos.map((g) => [g.id, g]));
-    return agruparGastosCombinables(gastos, new Set(combinablesDescartados)).map(
+    return agruparGastosCombinables(
+      gastos.map((g) => ({ ...g, enCuotas: !!g.enCuotas || !!g.cuotaDe })),
+      new Set(combinablesDescartados)
+    ).map(
       (ids) => ids.map((id) => porId.get(id)!)
     );
   }, [gastos, combinablesDescartados]);
@@ -590,6 +601,11 @@ export function GastosView({
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{g.emisorNombre}</div>
+                        {etiquetaCuotas(g) && (
+                          <div className="text-xs text-muted-foreground">
+                            {etiquetaCuotas(g)}
+                          </div>
+                        )}
                         {nota && (
                           <div className="text-xs font-medium text-destructive">
                             {nota}
@@ -616,7 +632,9 @@ export function GastosView({
                       <TableCell className="text-muted-foreground">
                         {g.cantidadItems}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell
+                        className={`text-right font-medium ${g.enCuotas ? "text-muted-foreground" : ""}`}
+                      >
                         {formatearMonto(g.montoTotal)}
                       </TableCell>
                       <TableCell className="w-10">
@@ -651,6 +669,11 @@ export function GastosView({
                               ? ` · cargado ${formatearFechaCorta(g.creadoEn.slice(0, 10))}`
                               : " · sin fecha de carga")}
                         </div>
+                        {etiquetaCuotas(g) && (
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            {etiquetaCuotas(g)}
+                          </div>
+                        )}
                         {nota && (
                           <div className="mt-0.5 text-xs font-medium text-destructive">
                             {nota}
@@ -672,7 +695,9 @@ export function GastosView({
                           ))}
                         </div>
                       </div>
-                      <div className="shrink-0 text-[15px] font-medium">
+                      <div
+                        className={`shrink-0 text-[15px] font-medium ${g.enCuotas ? "text-muted-foreground" : ""}`}
+                      >
                         {formatearMonto(g.montoTotal)}
                       </div>
                     </div>

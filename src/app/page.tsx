@@ -82,7 +82,11 @@ export default async function Home() {
         <StatCard
           label="Gastado este mes"
           value={formatearMonto(resumen.totalMes)}
-          hint={`${resumen.cantidadGastosMes} ${resumen.cantidadGastosMes === 1 ? "gasto registrado" : "gastos registrados"}`}
+          hint={`${resumen.cantidadGastosMes} ${resumen.cantidadGastosMes === 1 ? "gasto registrado" : "gastos registrados"}${
+            resumen.cuotasPorPagar.cuotas > 0
+              ? ` · ${formatearMonto(resumen.cuotasPorPagar.pesos)} en cuotas por pagar`
+              : ""
+          }`}
         />
         <StatCard
           label="Gasto hormiga"
@@ -153,6 +157,8 @@ export default async function Home() {
                     {g.categorias.length > 0 &&
                       ` · ${g.categorias.map((c) => c.nombre).join(", ")}`}
                     {g.sinComprobante && " · sin comprobante"}
+                    {g.enCuotas && ` · en ${g.enCuotas.cantidad} cuotas, no suma`}
+                    {g.cuotaDe && ` · cuota ${g.cuotaDe.numero}/${g.cuotaDe.cantidad}`}
                   </div>
                 </div>
                 <div className="text-[15px] font-medium">

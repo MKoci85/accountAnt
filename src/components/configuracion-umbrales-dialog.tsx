@@ -46,6 +46,14 @@ export function ConfiguracionUmbralesDialog({
           onGuardar={(v) => guardarAjuste("ventanaMesesReferencia", v)}
         />
         <CampoNumero
+          etiqueta="Importe para preguntar si fue en cuotas"
+          sufijo="$"
+          valor={inicial.umbralCompraEnCuotas.valor}
+          porDefecto={inicial.umbralCompraEnCuotas.porDefecto}
+          ayuda="Al guardar un gasto de este importe o más, el formulario pregunta si se pagó en cuotas. Una compra en cuotas no suma entera el día de la compra: suman sus cuotas, cada una en el mes en que la cobra el banco. Un comprobante de la bandeja que lo supera no se guarda solo, para que se haga la pregunta."
+          onGuardar={(v) => guardarAjuste("umbralCompraEnCuotas", v)}
+        />
+        <CampoNumero
           etiqueta="Días hacia atrás para la cotización del BCU"
           sufijo="días"
           valor={inicial.bcuDiasHaciaAtras.valor}

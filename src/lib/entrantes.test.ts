@@ -125,6 +125,11 @@ describe("motivoDeRevision", () => {
     expect(motivoDeRevision(limpio)).toBeNull();
   });
 
+  it("desde el umbral de cuotas no se guarda solo: hay que preguntar si fue en cuotas", () => {
+    expect(motivoDeRevision({ ...limpio, umbralCuotas: 300 })).toBeNull();
+    expect(motivoDeRevision({ ...limpio, umbralCuotas: 250 })).toMatch(/cuotas/);
+  });
+
   it("tolera hasta $1 de diferencia con el total, no más", () => {
     expect(motivoDeRevision({ ...limpio, total: 250.9 })).toBeNull();
     expect(motivoDeRevision({ ...limpio, total: 252 })).toMatch(/no coincide/);

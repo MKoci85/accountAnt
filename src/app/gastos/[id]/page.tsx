@@ -6,6 +6,7 @@ import { BadgeLinea } from "@/components/badge-linea";
 import { Card } from "@/components/ui/card";
 import { obtenerGasto } from "@/app/actions/gastos";
 import { BorrarGastoButton } from "@/components/borrar-gasto-button";
+import { CompraEnCuotasCard } from "@/components/compra-en-cuotas-card";
 import { PageContainer } from "@/components/page-container";
 import { nombreLinea } from "@/lib/utils";
 import {
@@ -14,6 +15,7 @@ import {
   normalizarUnidad,
 } from "@/lib/precios-referencia";
 import { formatearMonto, formatearFechaLarga } from "@/lib/formato";
+import { cuotasRestantes } from "@/lib/estado-cuenta";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +29,7 @@ export default async function DetalleGastoPage({
 
   const total = gasto.items.reduce((acc, i) => acc + i.precio * i.cantidad, 0);
   const sinComprobante = gasto.serie === null;
+  const restantes = gasto.cuota ? cuotasRestantes(gasto.cuota, total) : null;
 
   return (
     <PageContainer>
@@ -45,6 +48,8 @@ export default async function DetalleGastoPage({
           </h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {formatearFechaLarga(gasto.fecha)}
+            {gasto.compraEnCuotas &&
+              ` · en ${gasto.compraEnCuotas.cantidad} cuotas: no suma en esta fecha, suman sus cuotas`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -57,6 +62,9 @@ export default async function DetalleGastoPage({
             <Pencil className="h-4 w-4" />
             Editar
           </Button>
+          {!gasto.cuotaDeCompra && !gasto.compraEnCuotas && (
+            <CompraEnCuotasCard gastoId={gasto.id} totalGasto={total} compra={null} />
+          )}
           <BorrarGastoButton gastoId={gasto.id} />
         </div>
       </div>
@@ -89,6 +97,70 @@ export default async function DetalleGastoPage({
               </div>
             )}
           </Card>
+
+          {gasto.cuotaDeCompra && (
+            <Card className="flex flex-col gap-2.5 px-5 py-4.5">
+              <div className="mb-0.5 text-sm font-semibold">
+                Cuota {gasto.cuotaDeCompra.numero} de {gasto.cuotaDeCompra.cantidad}
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-muted-foreground">Compra</span>
+                <span className="font-medium">
+                  {formatearFechaLarga(gasto.cuotaDeCompra.fechaCompra)}
+                </span>
+              </div>
+              <Link
+                href={`/gastos/${gasto.cuotaDeCompra.compraGastoId}`}
+                className="text-[12.5px] text-primary hover:underline"
+              >
+                Ver la compra y sus cuotas
+              </Link>
+              {gasto.cuota && (
+                <Link
+                  href={`/estado-cuenta/${gasto.cuota.estadoCuentaId}`}
+                  className="text-[12.5px] text-primary hover:underline"
+                >
+                  Ver el estado de cuenta
+                </Link>
+              )}
+            </Card>
+          )}
+
+          {gasto.compraEnCuotas && (
+            <CompraEnCuotasCard
+              gastoId={gasto.id}
+              totalGasto={total}
+              compra={gasto.compraEnCuotas}
+            />
+          )}
+
+          {!gasto.cuotaDeCompra && gasto.cuota && restantes && (
+            <Card className="flex flex-col gap-2.5 px-5 py-4.5">
+              <div className="mb-0.5 text-sm font-semibold">
+                Cuota {gasto.cuota.numero} de {gasto.cuota.total}
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-muted-foreground">Compra</span>
+                <span className="font-medium">
+                  {formatearFechaLarga(gasto.cuota.fechaCompra)}
+                </span>
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-muted-foreground">Faltan</span>
+                <span className="font-medium tabular-nums">
+                  {restantes.cantidad === 0
+                    ? "Ninguna, es la última"
+                    : `${restantes.cantidad} · ${formatearMonto(restantes.pesos ?? 0, { decimales: 2 })}`}
+                </span>
+              </div>
+              <Link
+                href={`/estado-cuenta/${gasto.cuota.estadoCuentaId}`}
+                className="text-[12.5px] text-primary hover:underline"
+              >
+                Ver el estado de cuenta
+              </Link>
+            </Card>
+          )}
 
           {sinComprobante && (
             <Card className="flex-row gap-2.5 border-destructive/20 bg-destructive/5 px-4.5 py-4">

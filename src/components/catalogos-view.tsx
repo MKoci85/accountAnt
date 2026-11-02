@@ -10,6 +10,7 @@ import {
   ChevronRight,
   LineChart,
   Combine,
+  Merge,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NuevaCategoriaDialog } from "@/components/nueva-categoria-dialog";
 import { EmisorDialog } from "@/components/emisor-dialog";
+import { FusionarComerciosDialog } from "@/components/fusionar-comercios-dialog";
 import { ProveedorCfeDialog } from "@/components/proveedor-cfe-dialog";
 import { ConfirmarBorradoDialog } from "@/components/confirmar-borrado-dialog";
 import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
@@ -192,6 +194,7 @@ export function CatalogosView({
   const [numPaginaCategorias, setNumPaginaCategorias] = useState(1);
   const [numPaginaItems, setNumPaginaItems] = useState(1);
   const [filtroItems, setFiltroItems] = useState("");
+  const [filtroEmisores, setFiltroEmisores] = useState("");
   const [historialItem, setHistorialItem] =
     useState<ItemCatalogoConCategoria | null>(null);
   const [comprasPorItem, setComprasPorItem] = useState(comprasPorItemIniciales);
@@ -258,7 +261,17 @@ export function CatalogosView({
       )
     : itemsList;
   const paginaItems = paginar(itemsFiltrados, numPaginaItems, porPagina);
-  const paginaEmisores = paginar(emisoresList, numPaginaEmisores, porPagina);
+  const textoFiltroEmisores = filtroEmisores.trim().toLowerCase();
+  const emisoresFiltrados = textoFiltroEmisores
+    ? emisoresList.filter((e) =>
+        [e.nombre, e.ruc, nombreProveedor(e.proveedorCfeId)]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(textoFiltroEmisores)
+      )
+    : emisoresList;
+  const paginaEmisores = paginar(emisoresFiltrados, numPaginaEmisores, porPagina);
   const paginaProveedores = paginar(proveedoresList, numPaginaProveedores, porPagina);
 
   const [categoriaDialogOpen, setCategoriaDialogOpen] = useState(false);
@@ -275,6 +288,8 @@ export function CatalogosView({
 
   const [emisorDialogOpen, setEmisorDialogOpen] = useState(false);
   const [emisorEditando, setEmisorEditando] = useState<Emisor | null>(null);
+  const [emisorFusionando, setEmisorFusionando] = useState<Emisor | null>(null);
+  const [mensajeFusion, setMensajeFusion] = useState<string | null>(null);
   const [proveedorDialogOpen, setProveedorDialogOpen] = useState(false);
   const [proveedorEditando, setProveedorEditando] =
     useState<ProveedorCfe | null>(null);
@@ -534,7 +549,7 @@ export function CatalogosView({
             <span className="text-sm font-semibold">
               Comercios{" "}
               <span className="font-normal text-muted-foreground">
-                ({emisoresList.length})
+                ({emisoresFiltrados.length})
               </span>
             </span>
             <Button
@@ -549,6 +564,20 @@ export function CatalogosView({
               <Plus className="h-3.5 w-3.5" />
               Nuevo comercio
             </Button>
+          </div>
+          <div className="border-b px-5 py-3">
+            <Input
+              value={filtroEmisores}
+              placeholder="Buscar un comercio por nombre, RUC o proveedor"
+              className="text-[13px]"
+              onChange={(e) => {
+                setFiltroEmisores(e.target.value);
+                setNumPaginaEmisores(1);
+              }}
+            />
+            {mensajeFusion && (
+              <p className="mt-2 text-[12px] text-primary">{mensajeFusion}</p>
+            )}
           </div>
           <div className="divide-y">
             {paginaEmisores.paginaDatos.map((e) => (
@@ -581,6 +610,20 @@ export function CatalogosView({
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
+                  {!e.esGenerico && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Fusionar ${e.nombre} con otro comercio`}
+                      title="Fusionar con otro comercio que es el mismo"
+                      onClick={() => {
+                        setMensajeFusion(null);
+                        setEmisorFusionando(e);
+                      }}
+                    >
+                      <Merge className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -591,14 +634,16 @@ export function CatalogosView({
                 </div>
               </div>
             ))}
-            {emisoresList.length === 0 && (
+            {emisoresFiltrados.length === 0 && (
               <div className="px-5 py-6 text-center text-sm text-muted-foreground">
-                Todavía no hay comercios.
+                {emisoresList.length === 0
+                  ? "Todavía no hay comercios."
+                  : "Ningún comercio coincide con la búsqueda."}
               </div>
             )}
           </div>
           <PiePaginacion
-            total={emisoresList.length}
+            total={emisoresFiltrados.length}
             mostrando={paginaEmisores.paginaDatos.length}
             paginaActual={paginaEmisores.paginaActual}
             totalPaginas={paginaEmisores.totalPaginas}
@@ -766,6 +811,31 @@ export function CatalogosView({
           )
         }
       />
+
+      {emisorFusionando && (
+        <FusionarComerciosDialog
+          emisor={emisorFusionando}
+          emisores={emisoresList}
+          onCerrar={() => setEmisorFusionando(null)}
+          onFusionado={({ emisor, absorbidoId, gastosMovidos }) => {
+            setEmisoresList((prev) =>
+              ordenarPorNombre(
+                prev
+                  .filter((e) => e.id !== absorbidoId)
+                  .map((e) => (e.id === emisor.id ? emisor : e))
+              )
+            );
+            setEmisorFusionando(null);
+            setMensajeFusion(
+              `Fusionado en "${emisor.nombre}"${
+                gastosMovidos
+                  ? `: ${gastosMovidos === 1 ? "1 gasto pasó" : `${gastosMovidos} gastos pasaron`} a ese comercio.`
+                  : "."
+              }`
+            );
+          }}
+        />
+      )}
 
       <EmisorDialog
         key={`emisor-${emisorEditando?.id ?? "nuevo"}`}

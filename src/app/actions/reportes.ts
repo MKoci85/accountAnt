@@ -18,6 +18,7 @@ import {
   type UnidadMedida,
 } from "@/lib/precios-referencia";
 import { leerAjuste } from "@/lib/config-server";
+import { noEsCompraEnCuotas } from "@/lib/compras-cuotas-server";
 import { aISO } from "@/lib/formato";
 
 export type FiltrosReporte = {
@@ -50,6 +51,7 @@ async function obtenerLineas(filtros: FiltrosReporte): Promise<LineaPlana[]> {
   const condiciones = [
     gte(gastos.fecha, filtros.desde),
     lte(gastos.fecha, filtros.hasta),
+    noEsCompraEnCuotas,
   ];
   if (filtros.categoriaIds?.length) {
     condiciones.push(inArray(gastoItems.categoriaId, filtros.categoriaIds));
@@ -441,6 +443,8 @@ export async function exportarReporteJSON(filtros: FiltrosReporte) {
           "Diferencia en pesos entre lo que se pagó y lo que habría costado al mínimo histórico conocido de ese producto, a igual tamaño (la referencia por unidad de medida se reexpande al tamaño de cada línea antes de restar). Es plata recuperable comprando en otro lado.",
         potencialAhorro:
           "Suma del gasto hormiga (evitable por completo) más el sobreprecio del gasto necesario (recuperable comprando al mejor precio). No se cuenta dos veces el sobreprecio de las líneas que ya son hormiga.",
+        compraEnCuotas:
+          "Una compra pagada en cuotas con tarjeta no suma en la fecha de la compra: suma cada cuota en el mes en que la cobra el banco, repartida entre las categorías de la compra. Lo que se paga por encima del precio aparece como 'Recargo de financiación', en la categoría de gastos bancarios: es el costo de haber financiado la compra.",
         matriz:
           "Cruce de los dos flags. El cuadrante 'hormigaCaro' es el ahorro más fácil: compras evitables que además se pagaron caro.",
         ahorroVsMesAnterior:

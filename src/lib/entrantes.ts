@@ -93,6 +93,8 @@ export function motivoDeRevision(comprobante: {
   aviso: string | null;
   total: number | null;
   lineas: { catalogada: boolean; cantidad: number; precio: number }[];
+  /** Desde este total hay que preguntar si se pagó en cuotas. */
+  umbralCuotas?: number;
 }): string | null {
   if (comprobante.lectura !== "qr") {
     return "Se leyó con IA, sin un QR validado: hay que revisarlo contra el papel.";
@@ -121,6 +123,12 @@ export function motivoDeRevision(comprobante: {
   );
   if (Math.abs(suma - comprobante.total) > 1) {
     return "La suma de los ítems no coincide con el total del comprobante.";
+  }
+  if (
+    comprobante.umbralCuotas !== undefined &&
+    comprobante.total >= comprobante.umbralCuotas
+  ) {
+    return "Es un importe alto: hay que confirmar si se pagó en cuotas.";
   }
   return null;
 }

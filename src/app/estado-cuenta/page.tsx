@@ -1,16 +1,22 @@
-import { listarCategorias } from "@/app/actions/catalogos";
+import { listarCategorias, listarEmisores } from "@/app/actions/catalogos";
 import { obtenerProveedoresDisponiblesIA } from "@/app/actions/configuracion";
-import { obtenerBorradorEstadoCuenta } from "@/app/actions/estado-cuenta";
+import {
+  listarEstadosCuenta,
+  obtenerBorradorEstadoCuenta,
+} from "@/app/actions/estado-cuenta";
 import { EstadoCuentaView } from "@/components/estado-cuenta-view";
 import { PageContainer } from "@/components/page-container";
+import { RegistroEstadosCuenta } from "@/components/registro-estados-cuenta";
 
 export const dynamic = "force-dynamic";
 
 export default async function EstadosCuentaPage() {
-  const [categorias, ia, borrador] = await Promise.all([
+  const [categorias, emisores, ia, borrador, estados] = await Promise.all([
     listarCategorias(),
+    listarEmisores(),
     obtenerProveedoresDisponiblesIA(),
     obtenerBorradorEstadoCuenta(),
+    listarEstadosCuenta(),
   ]);
 
   return (
@@ -29,10 +35,13 @@ export default async function EstadosCuentaPage() {
 
       <EstadoCuentaView
         categorias={categorias}
+        emisores={emisores.map(({ id, nombre, ruc }) => ({ id, nombre, ruc }))}
         proveedoresIA={ia.disponibles}
         proveedorActivoIA={ia.activo}
         borradorInicial={borrador}
       />
+
+      <RegistroEstadosCuenta estados={estados} />
     </PageContainer>
   );
 }

@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { emisores } from "./catalogos";
+import { estadosCuenta } from "./estados-cuenta";
 
 export const CANALES_ENTRANTE = ["manual", "whatsapp"] as const;
 export const ESTADOS_ENTRANTE = ["pendiente", "error"] as const;
@@ -50,6 +51,9 @@ export const estadoCuentaBorrador = sqliteTable("estado_cuenta_borrador", {
   movimientosJson: text("movimientos_json").notNull(),
   // Si el PDF se leyó con IA: la revisión posterior abre el detalle de ítems.
   conIA: integer("con_ia", { mode: "boolean" }).notNull().default(false),
+  estadoCuentaId: integer("estado_cuenta_id").references(() => estadosCuenta.id, {
+    onDelete: "set null",
+  }),
 });
 
 /**

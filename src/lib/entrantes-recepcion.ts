@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { categorias, emisores, gastos, gastosEntrantes } from "@/db/schema";
 import { montoDesdeQR, parsearQR } from "@/lib/cfe";
-import { leerAjustesBandeja } from "@/lib/config-server";
+import { leerAjuste, leerAjustesBandeja } from "@/lib/config-server";
 import { esFechaISOValida } from "@/lib/formato";
 import {
   claveComprobante,
@@ -351,6 +351,7 @@ async function guardarSiNoHayNadaQueRevisar(
       cantidad: l.cantidad,
       precio: montoDeLinea(l.precio),
     })),
+    umbralCuotas: await leerAjuste("umbralCompraEnCuotas"),
   });
   if (motivo !== null) return { guardado: false, motivo };
   if (

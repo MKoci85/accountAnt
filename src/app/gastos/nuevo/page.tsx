@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/entrantes";
 import { NuevoGastoForm } from "@/components/nuevo-gasto-form";
 import { PageContainer } from "@/components/page-container";
+import { leerAjuste } from "@/lib/config-server";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,14 @@ export default async function NuevoGastoPage({
   searchParams: Promise<{ entrante?: string }>;
 }) {
   const entranteId = Number((await searchParams).entrante);
-  const [categorias, ia, bandeja, entrante] = await Promise.all([
+  const [categorias, ia, bandeja, entrante, umbralCuotas] = await Promise.all([
     listarCategorias(),
     obtenerProveedoresDisponiblesIA(),
     obtenerResumenBandeja(),
     Number.isInteger(entranteId) && entranteId > 0
       ? obtenerEntranteParaRevision(entranteId)
       : null,
+    leerAjuste("umbralCompraEnCuotas"),
   ]);
   // Un entrante que ya se resolvió o se descartó manda de vuelta a la bandeja
   // en vez de abrir un formulario vacío que parece el suyo.
@@ -64,6 +66,7 @@ export default async function NuevoGastoPage({
           proveedoresIA={ia.disponibles}
           proveedorActivoIA={ia.activo}
           entranteInicial={entrante ?? undefined}
+          umbralCuotas={umbralCuotas}
         />
       )}
     </PageContainer>

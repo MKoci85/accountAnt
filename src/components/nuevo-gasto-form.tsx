@@ -48,6 +48,10 @@ import { EmisorDialog } from "@/components/emisor-dialog";
 import { HistorialPreciosDialog } from "@/components/historial-precios-dialog";
 import { LineaGastoFila } from "@/components/linea-gasto-fila";
 import { ComboboxBusqueda } from "@/components/combobox-busqueda";
+import {
+  CompraEnCuotasDialog,
+  type DatosCompraEnCuotas,
+} from "@/components/compra-en-cuotas-dialog";
 import { ITEM_PAGO_TARJETA } from "@/lib/clasificacion-comercios";
 import {
   superaReferencia,
@@ -124,6 +128,7 @@ export function NuevoGastoForm({
   entranteInicial,
   proveedoresIA = [],
   proveedorActivoIA,
+  umbralCuotas,
 }: {
   categoriasIniciales: Categoria[];
   gastoInicial?: GastoDetalle;
@@ -132,6 +137,8 @@ export function NuevoGastoForm({
   entranteInicial?: EntranteParaRevision;
   proveedoresIA?: { id: ProveedorIA; nombre: string; modelo: string }[];
   proveedorActivoIA?: ProveedorIA;
+  /** Desde este total, al guardar un gasto nuevo se pregunta si fue en cuotas. */
+  umbralCuotas?: number;
 }) {
   const [categoriasList, setCategoriasList] = useState(categoriasIniciales);
 
@@ -223,6 +230,7 @@ export function NuevoGastoForm({
 
   const [guardando, startGuardado] = useTransition();
   const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
+  const [preguntaCuotas, setPreguntaCuotas] = useState(false);
 
   const huellaActual = huellaFormulario(
     fecha,
@@ -735,41 +743,51 @@ export function NuevoGastoForm({
   const motivo = motivoNoGuardable();
   const puedeGuardar = motivo === null;
 
+  async function persistirGasto(cuotas?: DatosCompraEnCuotas) {
+    if (!emisorSeleccionado) return;
+    const items = lineas.map((l) => ({
+      itemCatalogoId: l.item.id > 0 ? l.item.id : null,
+      descripcion: l.item.id > 0 ? null : l.item.nombre,
+      categoriaId: l.categoriaId,
+      cantidad: l.cantidad,
+      unidad: l.unidad,
+      precio: montoDeLinea(l.precio),
+      esHormiga: l.esHormiga,
+      esSobreprecio: sobreprecioDeLinea(l),
+      sobreprecioResuelto: true,
+      esPrecioBase: l.esPrecioBase,
+      esOferta: l.esOferta,
+      esPesoDesconocido: l.esPesoDesconocido,
+    }));
+    if (gastoInicial) {
+      await editarGasto(gastoInicial.id, {
+        emisorId: emisorSeleccionado.id,
+        fecha,
+        items,
+        redirigirA: revision ? destinoSiguiente(revision) : undefined,
+      });
+    } else {
+      await crearGasto({
+        emisorId: emisorSeleccionado.id,
+        fecha,
+        items,
+        ...(datosCfe ?? {}),
+        entranteId: entranteInicial?.id,
+        cuotas,
+      });
+    }
+  }
+
   function handleGuardarGasto() {
     if (!emisorSeleccionado || !puedeGuardar) return;
+    if (!gastoInicial && umbralCuotas !== undefined && total >= umbralCuotas) {
+      setPreguntaCuotas(true);
+      return;
+    }
     setErrorGuardado(null);
     startGuardado(async () => {
       try {
-        const items = lineas.map((l) => ({
-          itemCatalogoId: l.item.id > 0 ? l.item.id : null,
-          descripcion: l.item.id > 0 ? null : l.item.nombre,
-          categoriaId: l.categoriaId,
-          cantidad: l.cantidad,
-          unidad: l.unidad,
-          precio: montoDeLinea(l.precio),
-          esHormiga: l.esHormiga,
-          esSobreprecio: sobreprecioDeLinea(l),
-          sobreprecioResuelto: true,
-          esPrecioBase: l.esPrecioBase,
-          esOferta: l.esOferta,
-          esPesoDesconocido: l.esPesoDesconocido,
-        }));
-        if (gastoInicial) {
-          await editarGasto(gastoInicial.id, {
-            emisorId: emisorSeleccionado.id,
-            fecha,
-            items,
-            redirigirA: revision ? destinoSiguiente(revision) : undefined,
-          });
-        } else {
-          await crearGasto({
-            emisorId: emisorSeleccionado.id,
-            fecha,
-            items,
-            ...(datosCfe ?? {}),
-            entranteId: entranteInicial?.id,
-          });
-        }
+        await persistirGasto();
       } catch (e) {
         setErrorGuardado(
           e instanceof Error ? e.message : "No se pudo guardar el gasto"
@@ -1142,6 +1160,17 @@ export function NuevoGastoForm({
           itemCatalogoEditado(item);
           setItemCatalogoAEditar(null);
         }}
+      />
+
+      <CompraEnCuotasDialog
+        open={preguntaCuotas}
+        onOpenChange={setPreguntaCuotas}
+        titulo="¿Lo pagaste en cuotas?"
+        descripcion="Si fue en cuotas, la compra no suma entera hoy: suma cada cuota en el mes en que la cobra el banco."
+        inicial={{ total: Number(total.toFixed(2)) }}
+        etiquetaConfirmar="Guardar en cuotas"
+        alternativa={{ etiqueta: "Fue en un pago", onClick: () => persistirGasto() }}
+        onConfirmar={(datos) => persistirGasto(datos)}
       />
 
       <HistorialPreciosDialog

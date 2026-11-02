@@ -60,3 +60,4 @@ services
 # instalador Windows
 /installer/
 /data/entrantes/
+/data/estados-cuenta/

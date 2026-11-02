@@ -427,13 +427,16 @@ export type GastoComparable = {
   emisorGenerico: boolean;
   fecha: string;
   sinComprobante: boolean;
+  /** Es una compra en cuotas o la cuota de una. */
+  enCuotas?: boolean;
 };
 
 /**
  * Agrupa los gastos que `combinarGastos` aceptaría juntar: mismo comercio,
  * misma fecha y no más de uno con comprobante propio. El comercio genérico
  * ("Varios") queda afuera: dos compras sueltas del mismo día ahí son, casi
- * siempre, dos compras distintas.
+ * siempre, dos compras distintas. Las compras en cuotas y sus cuotas también:
+ * `combinarGastos` las rechaza.
  * @param descartados claves (`clavePar`) de pares que el usuario ya dijo que
  * no son el mismo gasto.
  */
@@ -443,7 +446,7 @@ export function agruparGastosCombinables(
 ): number[][] {
   const porClave = new Map<string, GastoComparable[]>();
   for (const gasto of gastos) {
-    if (gasto.emisorGenerico) continue;
+    if (gasto.emisorGenerico || gasto.enCuotas) continue;
     const clave = `${gasto.emisorId}|${gasto.fecha}`;
     porClave.set(clave, [...(porClave.get(clave) ?? []), gasto]);
   }

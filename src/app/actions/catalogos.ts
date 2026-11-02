@@ -11,6 +11,8 @@ import {
   gastos,
   gastoItems,
   gastosFijos,
+  gastosEntrantes,
+  emisorAlias,
 } from "@/db/schema";
 import { and, asc, count, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -22,6 +24,12 @@ import {
   paresDe,
   paresHeredados,
 } from "@/lib/duplicados";
+import {
+  aliasDeFusion,
+  comprobantesRepetidos,
+  datosDelFusionado,
+  problemaParaFusionar,
+} from "@/lib/emisores";
 
 function revalidarCatalogos() {
   revalidatePath("/gastos/nuevo");
@@ -936,4 +944,110 @@ export async function borrarEmisor(id: number) {
 
   await db.delete(emisores).where(eq(emisores.id, id));
   revalidarCatalogos();
+}
+
+/**
+ * Fusiona comercios que son el mismo (típicamente uno con RUC, creado por el
+ * QR, y otro con el texto del estado de cuenta). En una transacción, todo lo
+ * que apunta a los absorbidos pasa al que se conserva: gastos, gastos fijos,
+ * comprobantes de la bandeja y alias; el nombre de cada absorbido queda como
+ * alias, para que el próximo estado de cuenta con ese texto caiga en el
+ * comercio correcto; y si al que queda le faltaba RUC o proveedor de CFE,
+ * toma los del absorbido. No recalcula nada: los precios de referencia son
+ * por ítem, y el hormiga heredado por ítem y comercio se unifica solo.
+ * @returns el comercio que queda y cuántos gastos se movieron
+ */
+export async function combinarEmisores(datos: {
+  conservarId: number;
+  absorberIds: number[];
+}): Promise<{ emisor: typeof emisores.$inferSelect; gastosMovidos: number }> {
+  const ids = [datos.conservarId, ...new Set(datos.absorberIds)];
+  const filas = db.select().from(emisores).where(inArray(emisores.id, ids)).all();
+  const conservar = filas.find((e) => e.id === datos.conservarId);
+  const absorber = filas.filter((e) => e.id !== datos.conservarId);
+  if (!conservar || absorber.length !== ids.length - 1) {
+    throw new Error("Alguno de los comercios ya no existe");
+  }
+  const problema = problemaParaFusionar(conservar, absorber);
+  if (problema) throw new Error(problema);
+
+  const repetidos = comprobantesRepetidos(
+    db
+      .select({ tipoCfe: gastos.tipoCfe, serie: gastos.serie, numero: gastos.numero })
+      .from(gastos)
+      .where(inArray(gastos.emisorId, ids))
+      .all()
+  );
+  if (repetidos.length) {
+    throw new Error(
+      `El comprobante ${repetidos.join(", ")} está cargado en los dos comercios: borrá uno de esos gastos antes de fusionar.`
+    );
+  }
+
+  const idsAbsorber = absorber.map((e) => e.id);
+  const resultado = db.transaction((tx) => {
+    const movidos = tx
+      .update(gastos)
+      .set({ emisorId: conservar.id })
+      .where(inArray(gastos.emisorId, idsAbsorber))
+      .run().changes;
+    tx.update(gastosFijos)
+      .set({ emisorId: conservar.id })
+      .where(inArray(gastosFijos.emisorId, idsAbsorber))
+      .run();
+    tx.update(gastosEntrantes)
+      .set({ emisorId: conservar.id })
+      .where(inArray(gastosEntrantes.emisorId, idsAbsorber))
+      .run();
+    tx.update(emisorAlias)
+      .set({ emisorId: conservar.id })
+      .where(inArray(emisorAlias.emisorId, idsAbsorber))
+      .run();
+
+    const nuevosAlias = aliasDeFusion(
+      conservar,
+      absorber,
+      tx.select({ alias: emisorAlias.alias }).from(emisorAlias).all().map((a) => a.alias)
+    );
+    if (nuevosAlias.length) {
+      tx.insert(emisorAlias)
+        .values(nuevosAlias.map((alias) => ({ emisorId: conservar.id, alias })))
+        .onConflictDoNothing()
+        .run();
+    }
+
+    tx.delete(emisores).where(inArray(emisores.id, idsAbsorber)).run();
+    const emisor = tx
+      .update(emisores)
+      .set(datosDelFusionado(conservar, absorber))
+      .where(eq(emisores.id, conservar.id))
+      .returning()
+      .get();
+    return { emisor, gastosMovidos: movidos };
+  });
+
+  revalidarCatalogos();
+  revalidatePath("/reportes");
+  revalidatePath("/gastos-fijos");
+  revalidatePath("/bandeja");
+  return resultado;
+}
+
+/** Los textos de estado de cuenta que se resuelven a este comercio. */
+export async function listarAliasEmisor(emisorId: number) {
+  return db
+    .select({ id: emisorAlias.id, alias: emisorAlias.alias })
+    .from(emisorAlias)
+    .where(eq(emisorAlias.emisorId, emisorId))
+    .orderBy(asc(emisorAlias.alias))
+    .all();
+}
+
+/**
+ * Quita un alias: el próximo estado de cuenta con ese texto vuelve a
+ * preguntar a qué comercio va. Es como se deshace un comercio mal elegido.
+ */
+export async function borrarAliasEmisor(id: number) {
+  db.delete(emisorAlias).where(eq(emisorAlias.id, id)).run();
+  revalidatePath("/catalogos");
 }

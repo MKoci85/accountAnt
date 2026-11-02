@@ -8,6 +8,9 @@ import {
   emisores,
   itemsCatalogo,
   gastosCombinablesDescartados,
+  movimientosEstadoCuenta,
+  comprasEnCuotas,
+  cuotasCompra,
 } from "@/db/schema";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -29,6 +32,17 @@ import {
   type UnidadMedida,
 } from "@/lib/precios-referencia";
 import { leerAjuste } from "@/lib/config-server";
+import {
+  crearPlan,
+  cuotasDeGasto,
+  gastosDeCuotas,
+  noEsCompraEnCuotas,
+  totalCuotasPorPagar,
+  vincularCuotasImportadas,
+  type CompraEnCuotasDetalle,
+  type CuotaDeCompraDetalle,
+  type DatosPlan,
+} from "@/lib/compras-cuotas-server";
 import {
   MENSAJE_BLOQUEO_POR_MES,
   borrarEntrante,
@@ -178,6 +192,8 @@ export type NuevoGastoDatos = {
   entranteId?: number;
   /** Guardado automático: queda marcado hasta que el usuario lo revise. */
   sinRevisar?: boolean;
+  /** Se pagó en cuotas: el gasto queda como compra y suman sus cuotas. */
+  cuotas?: DatosPlan;
 };
 
 /**
@@ -214,6 +230,10 @@ export async function guardarGasto(
         .get();
 
       tx.insert(gastoItems).values(filasGastoItems(gasto.id, items)).run();
+
+      if (datos.cuotas) {
+        vincularCuotasImportadas(tx, crearPlan(tx, gasto.id, datos.cuotas));
+      }
 
       return { id: gasto.id };
     });
@@ -327,6 +347,11 @@ export async function combinarGastos(idsGastos: number[]) {
     throw new Error("Solo se pueden combinar gastos del mismo comercio y fecha");
   }
 
+  const deCuotas = gastosDeCuotas();
+  if (filas.some((f) => deCuotas.has(f.id))) {
+    throw new Error("Una compra en cuotas o una cuota no se combinan con otros gastos");
+  }
+
   if (filas.filter((f) => f.serie !== null).length > 1) {
     throw new Error("No se pueden combinar dos gastos que ya tienen comprobante propio");
   }
@@ -423,6 +448,20 @@ export type GastoDetalle = {
   serie: string | null;
   numero: string | null;
   montoTotal: number | null;
+  /**
+   * Qué cuota es este gasto, según la línea del estado de cuenta que lo
+   * vinculó; null si no es una cuota o si su estado de cuenta no se registró.
+   */
+  cuota: {
+    numero: number;
+    total: number;
+    fechaCompra: string;
+    estadoCuentaId: number;
+  } | null;
+  /** El plan, si el gasto es una compra en cuotas. */
+  compraEnCuotas: CompraEnCuotasDetalle | null;
+  /** Qué cuota es, si el gasto es la cuota de una compra registrada. */
+  cuotaDeCompra: CuotaDeCompraDetalle | null;
   items: {
     id: number;
     itemCatalogoId: number | null;
@@ -487,7 +526,33 @@ export async function obtenerGasto(id: number): Promise<GastoDetalle> {
     .innerJoin(categorias, eq(categorias.id, gastoItems.categoriaId))
     .where(eq(gastoItems.gastoId, id));
 
-  return { ...cabecera, items };
+  const cuota = db
+    .select({
+      numero: movimientosEstadoCuenta.cuotaNumero,
+      total: movimientosEstadoCuenta.cuotasTotal,
+      fechaCompra: movimientosEstadoCuenta.fecha,
+      estadoCuentaId: movimientosEstadoCuenta.estadoCuentaId,
+    })
+    .from(movimientosEstadoCuenta)
+    .where(
+      and(
+        eq(movimientosEstadoCuenta.gastoId, id),
+        isNotNull(movimientosEstadoCuenta.cuotaNumero),
+        isNotNull(movimientosEstadoCuenta.cuotasTotal)
+      )
+    )
+    .orderBy(desc(movimientosEstadoCuenta.id))
+    .get();
+
+  return {
+    ...cabecera,
+    cuota:
+      cuota && cuota.numero !== null && cuota.total !== null
+        ? { ...cuota, numero: cuota.numero, total: cuota.total }
+        : null,
+    ...cuotasDeGasto(id),
+    items,
+  };
 }
 
 export type GastoResumen = {
@@ -505,6 +570,10 @@ export type GastoResumen = {
   itemsNombres: string[];
   cantidadItems: number;
   montoTotal: number;
+  /** Es una compra en cuotas: no suma, suman sus cuotas. */
+  enCuotas: { cantidad: number; pagadas: number } | null;
+  /** Es la cuota de una compra en cuotas. */
+  cuotaDe: { numero: number; cantidad: number; compraGastoId: number } | null;
 };
 
 async function listarGastosConDetalle() {
@@ -536,6 +605,34 @@ async function listarGastosConDetalle() {
     .leftJoin(itemsCatalogo, eq(itemsCatalogo.id, gastoItems.itemCatalogoId))
     .orderBy(desc(gastos.fecha), desc(gastos.id));
 
+  const compras = new Map(
+    db
+      .select({
+        gastoId: comprasEnCuotas.gastoId,
+        cantidad: comprasEnCuotas.cantidadCuotas,
+        pagadas: sql<number>`coalesce(sum(${cuotasCompra.pagada}), 0)`,
+      })
+      .from(comprasEnCuotas)
+      .leftJoin(cuotasCompra, eq(cuotasCompra.compraId, comprasEnCuotas.id))
+      .groupBy(comprasEnCuotas.id)
+      .all()
+      .map((c) => [c.gastoId, { cantidad: c.cantidad, pagadas: c.pagadas }])
+  );
+  const cuotas = new Map(
+    db
+      .select({
+        gastoId: cuotasCompra.gastoId,
+        numero: cuotasCompra.numero,
+        cantidad: comprasEnCuotas.cantidadCuotas,
+        compraGastoId: comprasEnCuotas.gastoId,
+      })
+      .from(cuotasCompra)
+      .innerJoin(comprasEnCuotas, eq(comprasEnCuotas.id, cuotasCompra.compraId))
+      .where(isNotNull(cuotasCompra.gastoId))
+      .all()
+      .map(({ gastoId, ...c }) => [gastoId, c])
+  );
+
   const porGasto = new Map<number, GastoResumen>();
 
   for (const fila of filas) {
@@ -556,6 +653,8 @@ async function listarGastosConDetalle() {
         itemsNombres: [],
         cantidadItems: 0,
         montoTotal: 0,
+        enCuotas: compras.get(fila.gastoId) ?? null,
+        cuotaDe: cuotas.get(fila.gastoId) ?? null,
       };
       porGasto.set(fila.gastoId, gasto);
     }
@@ -597,7 +696,9 @@ export async function obtenerResumenDashboard() {
     (g) => g.fecha >= inicioMes && g.fecha < inicioMesSiguiente
   );
 
-  const totalMes = gastosDelMes.reduce((acc, g) => acc + g.montoTotal, 0);
+  const totalMes = gastosDelMes
+    .filter((g) => !g.enCuotas)
+    .reduce((acc, g) => acc + g.montoTotal, 0);
 
   const totalHormiga = await db
     .select({
@@ -609,7 +710,8 @@ export async function obtenerResumenDashboard() {
       and(
         eq(gastoItems.esHormiga, true),
         gte(gastos.fecha, inicioMes),
-        lt(gastos.fecha, inicioMesSiguiente)
+        lt(gastos.fecha, inicioMesSiguiente),
+        noEsCompraEnCuotas
       )
     )
     .then((r) => r[0]?.total ?? 0);
@@ -626,8 +728,11 @@ export async function obtenerResumenDashboard() {
     porcentajeHormiga: totalMes > 0 ? Math.round((totalHormiga / totalMes) * 100) : 0,
     emisoresPendientes: emisoresPendientes.length,
     gastosSinRevisar: todos.filter((g) => g.sinRevisar).length,
-    gruposGastosCombinables: agruparGastosCombinables(todos, new Set(descartados))
-      .length,
+    gruposGastosCombinables: agruparGastosCombinables(
+      todos.map((g) => ({ ...g, enCuotas: !!g.enCuotas || !!g.cuotaDe })),
+      new Set(descartados)
+    ).length,
+    cuotasPorPagar: totalCuotasPorPagar(),
     gastosRecientes: gastosDelMes.slice(0, 5),
   };
 }

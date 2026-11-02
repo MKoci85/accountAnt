@@ -229,6 +229,15 @@ describe("agruparGastosCombinables", () => {
     ).toEqual([]);
   });
 
+  it("no ofrece juntar una compra en cuotas ni la cuota de una", () => {
+    expect(
+      agruparGastosCombinables(
+        [gasto(1, 10, "2026-09-01"), { ...gasto(2, 10, "2026-09-01"), enCuotas: true }],
+        new Set()
+      )
+    ).toEqual([]);
+  });
+
   it("ignora el comercio genérico y los pares descartados", () => {
     expect(
       agruparGastosCombinables(

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -8,7 +9,12 @@ import {
   CampoFormulario,
 } from "@/components/dialog-formulario";
 import { useEnvioDialog } from "@/hooks/use-envio-dialog";
-import { crearEmisor, editarEmisor } from "@/app/actions/catalogos";
+import {
+  borrarAliasEmisor,
+  crearEmisor,
+  editarEmisor,
+  listarAliasEmisor,
+} from "@/app/actions/catalogos";
 import type { emisores, proveedoresCfe } from "@/db/schema";
 
 type Emisor = typeof emisores.$inferSelect;
@@ -116,6 +122,64 @@ export function EmisorDialog({
           ))}
         </Select>
       </CampoFormulario>
+
+      {emisorExistente && <AliasDelComercio emisorId={emisorExistente.id} />}
     </DialogFormulario>
+  );
+}
+
+/**
+ * Los textos de estado de cuenta que caen en este comercio. Quitar uno es
+ * como se deshace un comercio mal elegido al importar: el próximo estado de
+ * cuenta con ese texto vuelve a dejarlo para elegir.
+ */
+function AliasDelComercio({ emisorId }: { emisorId: number }) {
+  const [alias, setAlias] = useState<{ id: number; alias: string }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    listarAliasEmisor(emisorId).then((filas) => {
+      if (vigente) setAlias(filas);
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [emisorId]);
+
+  if (!alias?.length) return null;
+
+  return (
+    <CampoFormulario label="Nombres en estados de cuenta">
+      <div className="flex flex-col divide-y divide-border rounded-lg border border-border/60">
+        {alias.map((a) => (
+          <div key={a.id} className="flex items-center justify-between gap-2 px-3 py-1.5">
+            <span className="min-w-0 truncate text-[12.5px]">{a.alias}</span>
+            <button
+              type="button"
+              aria-label={`Quitar el alias ${a.alias}`}
+              title="Quitar: el próximo estado de cuenta con este texto vuelve a preguntar el comercio"
+              onClick={async () => {
+                setError(null);
+                try {
+                  await borrarAliasEmisor(a.id);
+                  setAlias((prev) => prev?.filter((x) => x.id !== a.id) ?? null);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "No se pudo quitar el alias");
+                }
+              }}
+              className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11.5px] text-muted-foreground">
+        Las líneas del estado de cuenta con estos textos se cargan a este comercio. Quitar
+        uno es inmediato.
+      </p>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </CampoFormulario>
   );
 }

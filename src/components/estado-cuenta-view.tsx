@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleAlert,
+  CreditCard,
   Fuel,
   Store,
   Sparkles,
@@ -15,6 +16,12 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CuotasEsperadas } from "@/components/cuotas-esperadas";
+import {
+  ComercioDeLinea,
+  type ComercioElegido,
+} from "@/components/comercio-de-linea";
+import { sinCuota } from "@/lib/estado-cuenta";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import type { ProveedorIA } from "@/lib/proveedores-ia";
@@ -53,9 +60,24 @@ type LineaEditable = LineaAnalizada & {
   incluir: boolean;
   descripcionEditada: string;
   montoEditado: string;
+  comercio: ComercioElegido;
+  /** El usuario eligió otro comercio que el sugerido: se recuerda como alias. */
+  comercioCambiado: boolean;
 };
 
+/** Las líneas con el mismo texto del banco son el mismo comercio. */
+function textoComercio(descripcion: string) {
+  return sinCuota(descripcion).toLowerCase();
+}
+
 const GRUPOS = [
+  {
+    estado: "cuota_compra" as const,
+    titulo: "Cuotas de compras en cuotas",
+    descripcion:
+      "Cuotas de compras registradas en cuotas. Cada una se importa como su gasto, con el comercio y las categorías de la compra; la compra en sí no suma.",
+    icono: CreditCard,
+  },
   {
     estado: "directo" as const,
     titulo: "Rubros directos",
@@ -88,11 +110,13 @@ const GRUPOS = [
 
 export function EstadoCuentaView({
   categorias,
+  emisores,
   proveedoresIA,
   proveedorActivoIA,
   borradorInicial,
 }: {
   categorias: Categoria[];
+  emisores: { id: number; nombre: string; ruc: string | null }[];
   proveedoresIA: { id: ProveedorIA; nombre: string; modelo: string }[];
   proveedorActivoIA: ProveedorIA;
   borradorInicial: BorradorEstadoCuenta | null;
@@ -104,7 +128,9 @@ export function EstadoCuentaView({
   const [conflictos, setConflictos] = useState<ConflictoConBandeja[]>([]);
   const [retomando, startRetomar] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [avisoIA, setAvisoIA] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [asignaciones, setAsignaciones] = useState<Record<number, number>>({});
+  const [ocultas, setOcultas] = useState<number[]>([]);
   const importadosURL = Number(useSearchParams().get("importados"));
   const [resultado, setResultado] = useState<string | null>(
     Number.isInteger(importadosURL) && importadosURL > 0
@@ -141,13 +167,20 @@ export function EstadoCuentaView({
       return;
     }
     setConflictos([]);
+    setAsignaciones({});
+    setOcultas([]);
     setAnalisis(resultado);
     setLineas(
       resultado.lineas.map((l) => ({
         ...l,
-        incluir: l.estado === "directo" || l.estado === "faltante",
+        incluir:
+          l.estado === "directo" ||
+          l.estado === "faltante" ||
+          l.estado === "cuota_compra",
         descripcionEditada: l.descripcion,
         montoEditado: l.montoPesos !== null ? String(l.montoPesos) : "",
+        comercio: { id: l.emisorId, nombre: l.emisorSugerido },
+        comercioCambiado: false,
       })),
     );
   }
@@ -199,7 +232,7 @@ export function EstadoCuentaView({
     }
 
     setError(null);
-    setAvisoIA(null);
+    setAviso(null);
     setResultado(null);
     setAnalizando(true);
     try {
@@ -212,27 +245,20 @@ export function EstadoCuentaView({
       }
 
       const conIA = usarIA && hayApiKeyIA;
-      setAnalizadoConIA(conIA);
-      let resultado: AnalisisEstadoCuenta & {
-        errorIA?: string;
-        avisoIA?: string;
-      };
+      const resultado = conIA
+        ? await analizarEstadoCuentaConIA(
+            { buffer: await file.arrayBuffer(), nombreArchivo: file.name },
+            proveedorIA,
+          )
+        : await analizarEstadoCuenta(await file.arrayBuffer(), file.name);
 
-      if (conIA) {
-        resultado = await analizarEstadoCuentaConIA(
-          { buffer: await file.arrayBuffer() },
-          proveedorIA,
-        );
-
-        if (resultado.errorIA) {
-          setError(resultado.errorIA);
-          setAnalisis(null);
-          return;
-        }
-        setAvisoIA(resultado.avisoIA ?? null);
-      } else {
-        resultado = await analizarEstadoCuenta(await file.arrayBuffer());
+      if (resultado.errorIA) {
+        setError(resultado.errorIA);
+        setAnalisis(null);
+        return;
       }
+      setAviso(resultado.aviso ?? null);
+      setAnalizadoConIA(resultado.conIA);
 
       if (!resultado.lineas.length) {
         setError(
@@ -288,6 +314,34 @@ export function EstadoCuentaView({
   );
   const conMontoInvalido = lineas.filter(montoInvalido).length;
 
+  const cuotaAsignadaDe = new Map(
+    Object.entries(asignaciones).map(([cuotaId, indice]) => [
+      indice,
+      analisis?.cuotasEsperadas.find((e) => e.cuotaId === Number(cuotaId)) ?? null,
+    ]),
+  );
+
+  function elegirComercio(linea: LineaEditable, comercio: ComercioElegido) {
+    const texto = textoComercio(linea.descripcion);
+    setLineas((prev) =>
+      prev.map((l) =>
+        textoComercio(l.descripcion) === texto && !l.cuotaCompra
+          ? { ...l, comercio, comercioCambiado: true }
+          : l,
+      ),
+    );
+  }
+
+  function asignarCuota(cuotaId: number, indice: number | null) {
+    setAsignaciones((prev) => {
+      const siguiente = { ...prev };
+      if (indice === null) delete siguiente[cuotaId];
+      else siguiente[cuotaId] = indice;
+      return siguiente;
+    });
+    if (indice !== null) actualizar(indice, { incluir: true });
+  }
+
   function handleImportar() {
     setError(null);
     startImportacion(async () => {
@@ -297,14 +351,32 @@ export function EstadoCuentaView({
           fecha: l.fecha,
           descripcion: l.descripcionEditada.trim() || l.descripcion,
           montoPesos: montoFinal(l)!,
-          emisorNombre: l.emisorSugerido,
+          emisorId: l.comercio.id,
+          emisorNombre: l.comercio.nombre,
           categoriaId: l.categoriaId ?? categorias[0].id,
-          aliasOriginal: l.emisorDesdeTexto ? l.descripcion : undefined,
+          aliasOriginal:
+            l.emisorDesdeTexto || (l.comercioCambiado && l.rubro === null)
+              ? l.descripcion
+              : undefined,
         }));
-        const r = await importarMovimientos(seleccion);
+        const estadoCuentaId = analisis?.estadoCuentaId ?? null;
+        const elegidas = new Set(seleccion.map((l) => l.indice));
+        const r = await importarMovimientos(
+          seleccion,
+          estadoCuentaId ?? undefined,
+          Object.entries(asignaciones)
+            .filter(([, indice]) => elegidas.has(indice))
+            .map(([cuotaId, indice]) => ({ indice, cuotaId: Number(cuotaId) })),
+        );
         setBorrador(null);
         if (!r.gastoIds.length) {
-          setResultado(`Se importaron ${r.importados} movimientos.`);
+          const cuotas =
+            r.cuotas > 0
+              ? `${r.cuotas === 1 ? "Se registró 1 cuota" : `Se registraron ${r.cuotas} cuotas`} de compras en cuotas.`
+              : estadoCuentaId === null
+                ? "No había movimientos para importar."
+                : "Estado de cuenta guardado en el registro, sin gastos nuevos.";
+          setResultado([cuotas, ...r.avisos].join(" "));
           setAnalisis(null);
           setLineas([]);
           return;
@@ -429,8 +501,8 @@ export function EstadoCuentaView({
           </div>
         )}
         {error && <p className="mt-2.5 text-xs text-destructive">{error}</p>}
-        {avisoIA && (
-          <p className="mt-2.5 text-xs text-muted-foreground">{avisoIA}</p>
+        {aviso && (
+          <p className="mt-2.5 text-xs text-muted-foreground">{aviso}</p>
         )}
         {resultado && (
           <p className="mt-2.5 flex items-center gap-1.5 text-xs text-primary">
@@ -545,6 +617,21 @@ export function EstadoCuentaView({
             </div>
           )}
 
+          <CuotasEsperadas
+            esperadas={analisis.cuotasEsperadas.filter(
+              (e) => !ocultas.includes(e.cuotaId),
+            )}
+            lineas={lineas.map((l) => ({
+              indice: l.indice,
+              fecha: l.fecha,
+              descripcion: l.descripcion,
+              montoPesos: l.montoPesos,
+            }))}
+            asignaciones={asignaciones}
+            onAsignar={asignarCuota}
+            onOcultar={(cuotaId) => setOcultas((prev) => [...prev, cuotaId])}
+          />
+
           {GRUPOS.map(({ estado, titulo, descripcion, icono: Icono }) => {
             const delGrupo = lineas.filter((l) => l.estado === estado);
             if (!delGrupo.length) return null;
@@ -611,27 +698,86 @@ export function EstadoCuentaView({
                         className="h-7 min-w-0 flex-1 text-[13px]"
                       />
 
+                      {linea.cuota && !linea.cuotaCompra && !cuotaAsignadaDe.get(linea.indice) && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0"
+                          title={
+                            linea.fechaCompra
+                              ? `Compra del ${formatearFechaCorta(linea.fechaCompra)}: la cuota va en la fecha de cierre`
+                              : undefined
+                          }
+                        >
+                          cuota {linea.cuota.numero}/{linea.cuota.total}
+                        </Badge>
+                      )}
+
+                      {(() => {
+                        const elegida = cuotaAsignadaDe.get(linea.indice);
+                        const deCompra = elegida
+                          ? {
+                              numero: elegida.numero,
+                              cantidad: elegida.cantidad,
+                              emisorNombre: elegida.emisorNombre,
+                              importeCalculado: elegida.importeCalculado,
+                              nueva: null,
+                              fechaCompra: elegida.fechaCompra,
+                            }
+                          : linea.cuotaCompra;
+                        if (!deCompra) return null;
+                        const monto = montoFinal(linea);
+                        const distinto =
+                          deCompra.importeCalculado !== null &&
+                          monto !== null &&
+                          Math.abs(monto - deCompra.importeCalculado) > 2;
+                        return (
+                          <Badge
+                            variant="secondary"
+                            className="h-auto shrink-0 whitespace-normal"
+                            title={
+                              deCompra.nueva
+                                ? `Convierte el gasto del ${formatearFechaCorta(deCompra.fechaCompra)} (${formatearPesos(deCompra.nueva.total)}) en una compra en ${deCompra.cantidad} cuotas${deCompra.nueva.interesPct > 0 ? ` con ${deCompra.nueva.interesPct}% de recargo` : ""}`
+                                : distinto
+                                  ? `Calculada en ${formatearPesos(deCompra.importeCalculado!)}: las cuotas que faltan se recalculan con lo cobrado`
+                                  : undefined
+                            }
+                          >
+                            cuota {deCompra.numero}/{deCompra.cantidad} de{" "}
+                            {deCompra.emisorNombre}
+                            {elegida && " · elegida"}
+                            {deCompra.nueva && " · convierte la compra"}
+                            {distinto && " · importe distinto"}
+                          </Badge>
+                        );
+                      })()}
+
                       {linea.moneda === "USD" && (
                         <Badge variant="outline" className="shrink-0">
                           USD {linea.montoOriginal}
                         </Badge>
                       )}
 
-                      <select
-                        value={linea.categoriaId ?? ""}
-                        onChange={(e) =>
-                          actualizar(linea.indice, {
-                            categoriaId: Number(e.target.value),
-                          })
-                        }
-                        className="h-7 w-[7.5rem] shrink-0 rounded-md border border-input bg-background px-1.5 text-[12px]"
-                      >
-                        {categorias.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.nombre}
-                          </option>
-                        ))}
-                      </select>
+                      {linea.cuotaCompra || cuotaAsignadaDe.get(linea.indice) ? (
+                        <span className="w-[7.5rem] shrink-0 text-[11.5px] text-muted-foreground">
+                          Las de la compra
+                        </span>
+                      ) : (
+                        <select
+                          value={linea.categoriaId ?? ""}
+                          onChange={(e) =>
+                            actualizar(linea.indice, {
+                              categoriaId: Number(e.target.value),
+                            })
+                          }
+                          className="h-7 w-[7.5rem] shrink-0 rounded-md border border-input bg-background px-1.5 text-[12px]"
+                        >
+                          {categorias.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.nombre}
+                            </option>
+                          ))}
+                        </select>
+                      )}
 
                       <Input
                         value={linea.montoEditado}
@@ -655,6 +801,20 @@ export function EstadoCuentaView({
                             : ""
                         }`}
                       />
+
+                      {!linea.cuotaCompra && !cuotaAsignadaDe.get(linea.indice) && (
+                        <div className="flex w-full items-center gap-2 pl-[4.75rem]">
+                          <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                            Comercio
+                          </span>
+                          <ComercioDeLinea
+                            id={`comercio-linea-${linea.indice}`}
+                            comercio={linea.comercio}
+                            emisores={emisores}
+                            onElegir={(comercio) => elegirComercio(linea, comercio)}
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -696,9 +856,16 @@ export function EstadoCuentaView({
               </Button>
               <Button
                 onClick={handleImportar}
-                disabled={!seleccionadas.length || importando}
+                disabled={
+                  (!seleccionadas.length && analisis.estadoCuentaId === null) ||
+                  importando
+                }
               >
-                {importando ? "Importando..." : "Importar seleccionados"}
+                {importando
+                  ? "Importando..."
+                  : seleccionadas.length
+                    ? "Importar seleccionados"
+                    : "Guardar sin importar"}
               </Button>
             </div>
           </Card>
