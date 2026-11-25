@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -82,7 +83,12 @@ export function GastosFijosView({
   }
 
   async function alternarArchivado(plantilla: GastoFijoConEstado) {
-    await cambiarActivoGastoFijo(plantilla.id, !plantilla.activo);
+    try {
+      desenvolver(await cambiarActivoGastoFijo(plantilla.id, !plantilla.activo));
+    } catch (e) {
+      setMensaje(e instanceof Error ? e.message : "No se pudo archivar");
+      return;
+    }
     setMensaje(
       plantilla.activo
         ? `${plantilla.nombre} quedó archivado`
@@ -280,7 +286,7 @@ export function GastosFijosView({
         descripcion={borrando ? descripcionBorrado(borrando) : ""}
         onConfirmar={async () => {
           if (!borrando) return;
-          await borrarGastoFijo(borrando.id);
+          desenvolver(await borrarGastoFijo(borrando.id));
           setMensaje(`${borrando.nombre} se borró`);
           router.refresh();
         }}

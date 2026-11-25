@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import {
@@ -76,7 +77,7 @@ export function HistorialPreciosDialog({
     startGuardado(async () => {
       try {
         const { sobrepreciosLimpiados, sobrepreciosRestaurados } =
-          await marcarCompraComoOferta(gastoItemId, esOferta);
+          desenvolver(await marcarCompraComoOferta(gastoItemId, esOferta));
         setCargado({
           itemCatalogoId,
           datos: await obtenerHistorialPrecios(itemCatalogoId),

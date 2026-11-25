@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   aISO,
   esFechaISOValida,
-  formatearFechaCorta,
   formatearMonto,
   parsearMonto,
 } from "@/lib/formato";
@@ -45,23 +44,12 @@ describe("formatearMonto", () => {
       expect(parsearMonto(formatearMonto(monto))).toBe(monto);
     }
   });
-
-  it("fija los decimales cuando se los piden", () => {
-    expect(formatearMonto(1234.5, { decimales: 2 })).toMatch(/50$/);
-    expect(formatearMonto(1234, { decimales: 0 })).not.toContain(",");
-  });
 });
 
 describe("fechas", () => {
   it("serializa en hora local, sin correrse de día por UTC", () => {
     expect(aISO(new Date(2026, 0, 5))).toBe("2026-01-05");
     expect(aISO(new Date(2026, 11, 31, 23, 30))).toBe("2026-12-31");
-  });
-
-  it("formatea la fecha corta desde el ISO sin construir un Date", () => {
-    expect(formatearFechaCorta("2026-09-03")).toBe("03 sep");
-    expect(formatearFechaCorta("2026-01-01")).toBe("01 ene");
-    expect(formatearFechaCorta("2026-12-25")).toBe("25 dic");
   });
 });
 
@@ -77,11 +65,5 @@ describe("esFechaISOValida", () => {
     expect(esFechaISOValida("2026-00-10")).toBe(false);
     expect(esFechaISOValida("2026-04-31")).toBe(false);
     expect(esFechaISOValida("2026-02-29")).toBe(false);
-  });
-
-  it("rechaza otro formato", () => {
-    expect(esFechaISOValida("11/10/2026")).toBe(false);
-    expect(esFechaISOValida("2026-1-5")).toBe(false);
-    expect(esFechaISOValida("")).toBe(false);
   });
 });

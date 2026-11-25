@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useMemo, useState } from "react";
 import {
   Plus,
@@ -299,16 +300,16 @@ export function CatalogosView({
   async function handleConfirmarBorrado() {
     if (!borrado) return;
     if (borrado.tipo === "categoria") {
-      await borrarCategoria(borrado.item.id);
+      desenvolver(await borrarCategoria(borrado.item.id));
       setCategoriasList((prev) => prev.filter((c) => c.id !== borrado.item.id));
     } else if (borrado.tipo === "item") {
-      await borrarItemCatalogo(borrado.item.id);
+      desenvolver(await borrarItemCatalogo(borrado.item.id));
       setItemsList((prev) => prev.filter((i) => i.id !== borrado.item.id));
     } else if (borrado.tipo === "emisor") {
-      await borrarEmisor(borrado.item.id);
+      desenvolver(await borrarEmisor(borrado.item.id));
       setEmisoresList((prev) => prev.filter((e) => e.id !== borrado.item.id));
     } else {
-      await borrarProveedorCfe(borrado.item.id);
+      desenvolver(await borrarProveedorCfe(borrado.item.id));
       setProveedoresList((prev) =>
         prev.filter((p) => p.id !== borrado.item.id)
       );

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { MessageSquarePlus, TriangleAlert } from "lucide-react";
@@ -72,7 +73,7 @@ export function DialogoAnalizarIA({
 
   function handleAnalizar() {
     enviar(async () => {
-      const { conversacionId } = await prepararReporteParaChat(
+      const { conversacionId } = desenvolver(await prepararReporteParaChat(
         JSON.parse(claveFiltros),
         destino === "nueva"
           ? {
@@ -81,7 +82,7 @@ export function DialogoAnalizarIA({
               modelo: eleccion.modelo,
             }
           : { tipo: "existente", conversacionId: destino },
-      );
+      ));
       onOpenChange(false);
       router.push(`/reportes/asistente/${conversacionId}`);
     });

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -63,9 +64,9 @@ export function EmisorDialog({
         proveedorCfeId: proveedorCfeId === "" ? null : proveedorCfeId,
       };
       if (emisorExistente) {
-        onEditado?.(await editarEmisor(emisorExistente.id, datos));
+        onEditado?.(desenvolver(await editarEmisor(emisorExistente.id, datos)));
       } else {
-        onCreado(await crearEmisor(datos));
+        onCreado(desenvolver(await crearEmisor(datos)));
       }
       onOpenChange(false);
     });
@@ -162,7 +163,7 @@ function AliasDelComercio({ emisorId }: { emisorId: number }) {
               onClick={async () => {
                 setError(null);
                 try {
-                  await borrarAliasEmisor(a.id);
+                  desenvolver(await borrarAliasEmisor(a.id));
                   setAlias((prev) => prev?.filter((x) => x.id !== a.id) ?? null);
                 } catch (e) {
                   setError(e instanceof Error ? e.message : "No se pudo quitar el alias");

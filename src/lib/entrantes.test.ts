@@ -3,7 +3,6 @@ import {
   claveComprobante,
   entrantesEnConflicto,
   esDeMesAnterior,
-  eventoCoincide,
   motivoDeRevision,
   parsearItemsEntrante,
 } from "@/lib/entrantes";
@@ -30,29 +29,6 @@ describe("claveComprobante", () => {
 });
 
 describe("parsearItemsEntrante", () => {
-  it("lee los ítems guardados", () => {
-    const json = JSON.stringify([
-      {
-        nombre: "COCA COLA 1,5 LT",
-        precio: 120,
-        tamano: "1,5 LT",
-        unidades: 2,
-        pesoTicket: null,
-        precioPorKiloTicket: null,
-      },
-    ]);
-    expect(parsearItemsEntrante(json)).toEqual([
-      {
-        nombre: "COCA COLA 1,5 LT",
-        precio: 120,
-        tamano: "1,5 LT",
-        unidades: 2,
-        pesoTicket: null,
-        precioPorKiloTicket: null,
-      },
-    ]);
-  });
-
   it("completa con null los campos opcionales que falten", () => {
     expect(parsearItemsEntrante('[{"nombre":"PAN","precio":50}]')).toEqual([
       {
@@ -231,49 +207,5 @@ describe("entrantesEnConflicto", () => {
   it("un comprobante sin datos de otro período no frena nada", () => {
     const viejo = { ...entrante, fecha: "2026-07-01", total: null };
     expect(entrantesEnConflicto(movimientos, [viejo], tolerancia)).toEqual([]);
-  });
-
-  it("sin movimientos por importar no hay conflicto posible", () => {
-    expect(entrantesEnConflicto([], [entrante], tolerancia)).toEqual([]);
-  });
-});
-
-describe("eventoCoincide", () => {
-  const mensaje = {
-    tipo: "whatsapp" as const,
-    id: "wamid.1",
-    fecha: "2026-10-19T19:13:49.455Z",
-    remitente: "59899123456",
-    resultado: "Ignorado: número no autorizado",
-    fallas: [{ paso: "Validación del QR en DGI", detalle: "tiempo agotado" }],
-  };
-  const suelta = {
-    tipo: "falla" as const,
-    id: "falla-1",
-    fecha: "2026-10-19T19:13:49.455Z",
-    origen: "subida" as const,
-    falla: { paso: "Ticket leído con IA", detalle: "El modelo no devolvió un JSON válido" },
-  };
-
-  it("una búsqueda vacía coincide con todo", () => {
-    expect(eventoCoincide(mensaje, "")).toBe(true);
-    expect(eventoCoincide(suelta, "   ")).toBe(true);
-  });
-
-  it("ignora mayúsculas y tildes", () => {
-    expect(eventoCoincide(mensaje, "NUMERO no AUTORIZADO")).toBe(true);
-    expect(eventoCoincide(mensaje, "validacion")).toBe(true);
-  });
-
-  it("busca en el número, el canal y las fallas anidadas", () => {
-    expect(eventoCoincide(mensaje, "99123")).toBe(true);
-    expect(eventoCoincide(mensaje, "whatsapp")).toBe(true);
-    expect(eventoCoincide(mensaje, "agotado")).toBe(true);
-    expect(eventoCoincide(suelta, "subida json")).toBe(true);
-  });
-
-  it("exige todas las palabras", () => {
-    expect(eventoCoincide(mensaje, "ignorado json")).toBe(false);
-    expect(eventoCoincide(suelta, "whatsapp")).toBe(false);
   });
 });

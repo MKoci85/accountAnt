@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { AlertTriangle, Image as IconoFoto, ImageUp, RotateCw, Trash2 } from "lucide-react";
@@ -89,7 +90,7 @@ export function BandejaView({ entrantes }: { entrantes: EntranteListado[] }) {
     );
     if (!seguir) return;
     ejecutar(entrante.id, async () => {
-      await descartarEntrante(entrante.id);
+      desenvolver(await descartarEntrante(entrante.id));
       return null;
     });
   }

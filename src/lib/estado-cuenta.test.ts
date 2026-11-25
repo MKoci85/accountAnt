@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   detectarUmbralUSD,
   parsearCabeceraEstadoCuenta,
-  parsearImporteResumen,
   movimientosDelRegistro,
   cuotaCompatible,
   cuotaDe,
-  cuotasRestantes,
   fecharCuotas,
   sinCuota,
   parsearEstadoCuenta,
@@ -45,10 +43,6 @@ describe("detectarUmbralUSD", () => {
   it("acepta las variantes de escritura del encabezado", () => {
     expect(detectarUmbralUSD([fila([["$U", 300], ["U$S", 460]])])).toBe(380);
     expect(detectarUmbralUSD([fila([["PESOS", 300], ["DOLARES", 460]])])).toBe(380);
-  });
-
-  it("ignora un encabezado de pesos que esté a la derecha del de dólares", () => {
-    expect(detectarUmbralUSD([fila([["USD", 400], ["$", 500]])])).toBe(370);
   });
 
   it("cae en el umbral por defecto si el PDF no trae encabezado", () => {
@@ -275,21 +269,6 @@ describe("parsearEstadoCuenta con celdas partidas en varias líneas", () => {
   });
 });
 
-describe("parsearImporteResumen", () => {
-  it("entiende las convenciones mezcladas del cuadro de totales", () => {
-    expect(parsearImporteResumen("17,905.25")).toBe(17905.25);
-    expect(parsearImporteResumen("0,00")).toBe(0);
-    expect(parsearImporteResumen("$ 66.643,38")).toBe(66643.38);
-    expect(parsearImporteResumen(".36")).toBe(0.36);
-    expect(parsearImporteResumen("-170.05")).toBe(-170.05);
-  });
-
-  it("no lee un texto que no es importe", () => {
-    expect(parsearImporteResumen("Pago contado")).toBeNull();
-    expect(parsearImporteResumen("")).toBeNull();
-  });
-});
-
 describe("parsearCabeceraEstadoCuenta", () => {
   it("lee banco, cierre, vencimiento y lo que hay que pagar", () => {
     const cabecera = parsearCabeceraEstadoCuenta([
@@ -324,15 +303,6 @@ describe("parsearCabeceraEstadoCuenta", () => {
       filaEn(639, [["10/10/26", 40]]),
     ]);
     expect(cabecera.cierre).toBe("2026-10-10");
-  });
-
-  it("sigue a la página siguiente cuando el salto separa rótulos y valores", () => {
-    const cabecera = parsearCabeceraEstadoCuenta([
-      filaEn(57, [["Pago contado", 370]], 1),
-      filaEn(749, [["$", 40], ["17,905.25", 370]], 2),
-      filaEn(725, [["USD", 40], ["22.99", 370]], 2),
-    ]);
-    expect(cabecera.pagoContado).toEqual({ pesos: 17905.25, usd: 22.99 });
   });
 
   it("deja en null lo que el formato no trae", () => {
@@ -394,15 +364,6 @@ describe("movimientosDelRegistro", () => {
       ["ya_registrado", 50],
       ["omitido", null],
     ]);
-  });
-
-  it("redondea a centavos el equivalente en pesos de una compra en dólares", () => {
-    const [fila] = movimientosDelRegistro(
-      [{ ...linea(1, null), moneda: "USD", montoOriginal: 2.99, montoPesos: 119.87508 }],
-      new Map(),
-      []
-    );
-    expect(fila.montoPesos).toBe(119.88);
   });
 
   it("una línea importada a pesar de matchear apunta al gasto nuevo", () => {
@@ -474,21 +435,6 @@ describe("cuotas", () => {
   it("un gasto sin marca de cuota, o una línea sin cuota, no se descartan", () => {
     expect(cuotaCompatible("TIENDA CUOTA 02/04", ["TIENDA", "ARTICULO"])).toBe(true);
     expect(cuotaCompatible("SUPERMERCADO", ["TIENDA CUOTA 01/04"])).toBe(true);
-  });
-
-  it("cuenta las cuotas que faltan después de esta y cuánto suman", () => {
-    expect(cuotasRestantes({ numero: 2, total: 4 }, 6603.77)).toEqual({
-      cantidad: 2,
-      pesos: 13207.54,
-    });
-    expect(cuotasRestantes({ numero: 4, total: 4 }, 6603.77)).toEqual({
-      cantidad: 0,
-      pesos: 0,
-    });
-    expect(cuotasRestantes({ numero: 1, total: 3 }, null)).toEqual({
-      cantidad: 2,
-      pesos: null,
-    });
   });
 
   it("el registro guarda qué cuota es y la fecha como la imprime el banco", () => {

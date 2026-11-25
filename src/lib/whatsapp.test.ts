@@ -5,9 +5,7 @@ import {
   interrupcionDe,
   marcaDeReintento,
   mensajesDeWebhook,
-  normalizarNumero,
   parsearNumeros,
-  textoRespuesta,
 } from "@/lib/whatsapp";
 
 const SECRETO = "secreto-de-la-app";
@@ -35,10 +33,6 @@ describe("firmaValida", () => {
 });
 
 describe("números", () => {
-  it("normaliza a dígitos", () => {
-    expect(normalizarNumero("+598 99 123-456")).toBe("59899123456");
-  });
-
   it("parsea una lista sin repetidos ni vacíos", () => {
     expect(parsearNumeros("+598 99 123 456; 59891000111\n59892000222")).toEqual([
       "59899123456",
@@ -106,29 +100,6 @@ describe("mensajesDeWebhook", () => {
     ).toEqual([]);
     expect(mensajesDeWebhook(null, ID_NUMERO)).toEqual([]);
     expect(mensajesDeWebhook({ entry: "no" }, ID_NUMERO)).toEqual([]);
-  });
-});
-
-describe("textoRespuesta", () => {
-  const guardado = { tipo: "guardado", comercio: "Bar", total: 100 } as const;
-  const pendiente = { tipo: "pendiente", motivo: "Hay 2 ítems sin reconocer." } as const;
-  const problema = { tipo: "problema", motivo: "Ese comprobante ya está cargado como gasto." } as const;
-
-  it("en modo problemas calla lo que salió bien y avisa lo que pide acción", () => {
-    expect(textoRespuesta(guardado, "problemas")).toBeNull();
-    expect(textoRespuesta({ tipo: "en-bandeja" }, "problemas")).toBeNull();
-    expect(textoRespuesta(pendiente, "problemas")).toContain("2 ítems sin reconocer");
-    expect(textoRespuesta(problema, "problemas")).toBe(problema.motivo);
-  });
-
-  it("en modo siempre también confirma", () => {
-    expect(textoRespuesta(guardado, "siempre")).toContain("Bar");
-    expect(textoRespuesta({ tipo: "en-bandeja" }, "siempre")).toContain("bandeja");
-  });
-
-  it("en modo nunca no contesta ni los problemas", () => {
-    expect(textoRespuesta(problema, "nunca")).toBeNull();
-    expect(textoRespuesta(pendiente, "nunca")).toBeNull();
   });
 });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -67,10 +68,10 @@ export function FusionarComerciosDialog({
       onGuardar={() =>
         enviar(async () => {
           if (!conservar || !absorbido) return;
-          const r = await combinarEmisores({
+          const r = desenvolver(await combinarEmisores({
             conservarId: conservar.id,
             absorberIds: [absorbido.id],
-          });
+          }));
           onFusionado({ ...r, absorbidoId: absorbido.id });
         })
       }

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState, useTransition } from "react";
 import { SlidersHorizontal, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ export function ConfiguracionUmbralesDialog({
           valor={inicial.margenSobreprecioPeso.valor * 100}
           porDefecto={inicial.margenSobreprecioPeso.porDefecto * 100}
           ayuda="Tolerancia sobre el precio de referencia en las líneas por kg o L. El precio por kilo que sale de un ticket nunca da exacto: sin margen casi toda compra de verdura quedaría marcada como cara. No se aplica a las líneas por unidad."
-          onGuardar={(v) => guardarAjuste("margenSobreprecioPeso", v / 100)}
+          onGuardar={(v) => guardarAjuste("margenSobreprecioPeso", v / 100).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Margen para sugerir oferta"
@@ -35,7 +36,7 @@ export function ConfiguracionUmbralesDialog({
           valor={inicial.margenOferta.valor * 100}
           porDefecto={inicial.margenOferta.porDefecto * 100}
           ayuda="Cuánto tiene que estar por debajo del precio de referencia una línea para que el formulario ofrezca marcarla como oferta. Una oferta no se usa como referencia: si no se marca, el precio promocional pasa a ser el mínimo y todas las compras siguientes quedan como sobreprecio."
-          onGuardar={(v) => guardarAjuste("margenOferta", v / 100)}
+          onGuardar={(v) => guardarAjuste("margenOferta", v / 100).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Ventana de precio de referencia"
@@ -43,7 +44,7 @@ export function ConfiguracionUmbralesDialog({
           valor={inicial.ventanaMesesReferencia.valor}
           porDefecto={inicial.ventanaMesesReferencia.porDefecto}
           ayuda="Cuánto hacia atrás se busca el precio más barato con el que se compara. Los precios suben: una ventana muy larga marca como sobreprecio compras normales de hoy."
-          onGuardar={(v) => guardarAjuste("ventanaMesesReferencia", v)}
+          onGuardar={(v) => guardarAjuste("ventanaMesesReferencia", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Importe para preguntar si fue en cuotas"
@@ -51,7 +52,7 @@ export function ConfiguracionUmbralesDialog({
           valor={inicial.umbralCompraEnCuotas.valor}
           porDefecto={inicial.umbralCompraEnCuotas.porDefecto}
           ayuda="Al guardar un gasto de este importe o más, el formulario pregunta si se pagó en cuotas. Una compra en cuotas no suma entera el día de la compra: suman sus cuotas, cada una en el mes en que la cobra el banco. Un comprobante de la bandeja que lo supera no se guarda solo, para que se haga la pregunta."
-          onGuardar={(v) => guardarAjuste("umbralCompraEnCuotas", v)}
+          onGuardar={(v) => guardarAjuste("umbralCompraEnCuotas", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Días hacia atrás para la cotización del BCU"
@@ -59,7 +60,7 @@ export function ConfiguracionUmbralesDialog({
           valor={inicial.bcuDiasHaciaAtras.valor}
           porDefecto={inicial.bcuDiasHaciaAtras.porDefecto}
           ayuda="El BCU no cotiza fines de semana ni feriados. Si la fecha pedida no tiene cotización se mira hacia atrás hasta encontrar una; el default cubre un fin de semana largo."
-          onGuardar={(v) => guardarAjuste("bcuDiasHaciaAtras", v)}
+          onGuardar={(v) => guardarAjuste("bcuDiasHaciaAtras", v).then(desenvolver)}
         />
       </div>
     </SeccionColapsable>

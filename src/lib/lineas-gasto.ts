@@ -96,6 +96,30 @@ export function montoDeLinea(precio: number | ""): number {
   return precio === "" ? 0 : precio;
 }
 
+/**
+ * Peso (o volumen) de una línea por kilo/litro a partir de lo que se pagó y del
+ * precio por kilo: el caso de la balanza que no imprime el peso pero sí el
+ * total. Se redondea con la menor cantidad de decimales (3 a 6) que, vuelta a
+ * multiplicar por el precio, devuelve el total al centavo — con 3 fijos, un
+ * precio por kilo alto deja el total de la línea corrido en centavos respecto
+ * del ticket.
+ * @returns `null` si falta el total o el precio por kilo.
+ */
+export function pesoDesdeTotal(
+  total: number | "",
+  precioPorUnidad: number | ""
+): number | null {
+  const t = montoDeLinea(total);
+  const p = montoDeLinea(precioPorUnidad);
+  if (!(t > 0) || !(p > 0)) return null;
+  const exacto = t / p;
+  for (let decimales = 3; decimales <= 6; decimales++) {
+    const peso = Number(exacto.toFixed(decimales));
+    if (peso > 0 && Math.abs(peso * p - t) < 0.005) return peso;
+  }
+  return Number(exacto.toFixed(6));
+}
+
 const CATEGORIA_SIN_ASIGNAR: Categoria = {
   id: -1,
   nombre: "Sin asignar",

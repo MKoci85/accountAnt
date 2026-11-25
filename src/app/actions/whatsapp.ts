@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { revalidatePath } from "next/cache";
 import {
   MODOS_RESPUESTA,
@@ -73,7 +74,7 @@ export type CampoWhatsapp =
   | "timeoutMs";
 
 /** Guarda un campo de texto de WhatsApp. Vacío = volver al default (o borrar). */
-export async function guardarCampoWhatsapp(campo: CampoWhatsapp, valor: string) {
+export const guardarCampoWhatsapp = accion(async (campo: CampoWhatsapp, valor: string) => {
   const limpio = valor.trim();
   switch (campo) {
     case "token":
@@ -108,7 +109,7 @@ export async function guardarCampoWhatsapp(campo: CampoWhatsapp, valor: string) 
       throw new Error("Campo de WhatsApp desconocido");
   }
   revalidatePath("/ajustes");
-}
+});
 
 export async function borrarSecretoWhatsapp(campo: "token" | "appSecret") {
   if (campo !== "token" && campo !== "appSecret") {
@@ -118,18 +119,18 @@ export async function borrarSecretoWhatsapp(campo: "token" | "appSecret") {
   revalidatePath("/ajustes");
 }
 
-export async function guardarActivoWhatsapp(activo: boolean) {
+export const guardarActivoWhatsapp = accion(async (activo: boolean) => {
   await escribirConfigWhatsapp("activo", activo ? "1" : null);
   revalidatePath("/ajustes");
-}
+});
 
-export async function guardarRespuestaWhatsapp(modo: ModoRespuesta) {
+export const guardarRespuestaWhatsapp = accion(async (modo: ModoRespuesta) => {
   if (!MODOS_RESPUESTA.includes(modo)) {
     throw new Error("Modo de respuesta desconocido");
   }
   await escribirConfigWhatsapp("respuesta", modo);
   revalidatePath("/ajustes");
-}
+});
 
 /**
  * Devuelve el resultado en vez de tirar: una build de producción le borra el

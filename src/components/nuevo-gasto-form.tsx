@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
@@ -152,6 +153,7 @@ export function NuevoGastoForm({
       entranteInicial?.comercio ??
       ""
   );
+  const [errorEmisor, setErrorEmisor] = useState<string | null>(null);
   const [emisorSeleccionado, setEmisorSeleccionado] = useState<Emisor | null>(
     gastoInicial
       ? {
@@ -293,8 +295,12 @@ export function NuevoGastoForm({
   async function crearEmisorAlVuelo() {
     const nombre = emisorQuery.trim();
     if (!nombre) return;
-    const emisor = await crearEmisor({ nombre });
-    seleccionarEmisor(emisor);
+    setErrorEmisor(null);
+    try {
+      seleccionarEmisor(desenvolver(await crearEmisor({ nombre })));
+    } catch (e) {
+      setErrorEmisor(e instanceof Error ? e.message : "No se pudo crear el comercio");
+    }
   }
 
   async function usarEmisorGenerico() {
@@ -737,6 +743,15 @@ export function NuevoGastoForm({
         ? `Falta el precio de ${sinPrecio[0].item.nombre}.`
         : `Faltan los precios de ${sinPrecio.length} ítems.`;
     }
+
+    const sinPeso = lineas.filter(
+      (l) => l.unidad !== "un" && !l.esPesoDesconocido && !(l.cantidad > 0)
+    );
+    if (sinPeso.length > 0) {
+      return sinPeso.length === 1
+        ? `Falta el peso (o el total) de ${sinPeso[0].item.nombre}.`
+        : `Falta el peso (o el total) de ${sinPeso.length} ítems.`;
+    }
     return null;
   }
 
@@ -760,21 +775,21 @@ export function NuevoGastoForm({
       esPesoDesconocido: l.esPesoDesconocido,
     }));
     if (gastoInicial) {
-      await editarGasto(gastoInicial.id, {
+      desenvolver(await editarGasto(gastoInicial.id, {
         emisorId: emisorSeleccionado.id,
         fecha,
         items,
         redirigirA: revision ? destinoSiguiente(revision) : undefined,
-      });
+      }));
     } else {
-      await crearGasto({
+      desenvolver(await crearGasto({
         emisorId: emisorSeleccionado.id,
         fecha,
         items,
         ...(datosCfe ?? {}),
         entranteId: entranteInicial?.id,
         cuotas,
-      });
+      }));
     }
   }
 
@@ -875,6 +890,7 @@ export function NuevoGastoForm({
             onQueryChange={(valor) => {
               setEmisorQuery(valor);
               setEmisorSeleccionado(null);
+              setErrorEmisor(null);
             }}
             resultados={resultadosEmisor}
             claveOpcion={(e) => e.id}
@@ -889,6 +905,9 @@ export function NuevoGastoForm({
             inputClassName="h-10 pl-8"
             panelClassName="top-11"
           />
+          {errorEmisor && (
+            <p className="mt-1.5 text-xs text-destructive">{errorEmisor}</p>
+          )}
           {!emisorSeleccionado && (
             <button
               type="button"

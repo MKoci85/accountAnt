@@ -1,5 +1,7 @@
 "use server";
 
+import { desenvolver } from "@/lib/resultado";
+import { accion } from "@/lib/acciones-server";
 import { revalidatePath } from "next/cache";
 import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
@@ -204,10 +206,10 @@ async function mensajesVivos(conversacionId: number): Promise<MensajeChat[]> {
  * @param opciones Proveedor/modelo a fijar para esta conversación.
  * @returns El id de la conversación creada.
  */
-export async function crearConversacion(opciones?: {
+export const crearConversacion = accion(async (opciones?: {
   proveedor?: string;
   modelo?: string;
-}): Promise<number> {
+}): Promise<number> => {
   const { proveedor, modelo } = await resolverProveedorYModelo(opciones);
   const ahora = new Date().toISOString();
 
@@ -224,7 +226,7 @@ export async function crearConversacion(opciones?: {
 
   revalidatePath("/reportes/asistente");
   return fila.id;
-}
+});
 
 async function resolverProveedorYModelo(opciones?: {
   proveedor?: string;
@@ -249,7 +251,7 @@ async function resolverProveedorYModelo(opciones?: {
   return { proveedor, modelo: modelo || (await leerModeloIA(proveedor)) };
 }
 
-export async function renombrarConversacion(id: number, titulo: string) {
+export const renombrarConversacion = accion(async (id: number, titulo: string) => {
   const limpio = titulo.trim().slice(0, LARGO_MAX_TITULO);
   if (!limpio) throw new Error("El título no puede estar vacío");
 
@@ -258,12 +260,12 @@ export async function renombrarConversacion(id: number, titulo: string) {
     .set({ titulo: limpio })
     .where(eq(conversacionesIA.id, id));
   revalidatePath("/reportes/asistente");
-}
+});
 
-export async function borrarConversacion(id: number) {
+export const borrarConversacion = accion(async (id: number) => {
   await db.delete(conversacionesIA).where(eq(conversacionesIA.id, id));
   revalidatePath("/reportes/asistente");
-}
+});
 
 const MAX_ADJUNTOS_USADOS = 5;
 
@@ -334,16 +336,16 @@ export async function destinosParaReporte(filtros: FiltrosReporte): Promise<{
  * @param destino Conversación nueva o existente donde adjuntarlo.
  * @returns El id de la conversación y el resumen del adjunto creado.
  */
-export async function prepararReporteParaChat(
+export const prepararReporteParaChat = accion(async (
   filtros: FiltrosReporte,
   destino: DestinoAnalisis,
-): Promise<{ conversacionId: number; adjunto: ResumenAdjunto }> {
+): Promise<{ conversacionId: number; adjunto: ResumenAdjunto }> => {
   const conversacionId =
     destino.tipo === "nueva"
-      ? await crearConversacion({
+      ? desenvolver(await crearConversacion({
           proveedor: destino.proveedor,
           modelo: destino.modelo,
-        })
+        }))
       : destino.conversacionId;
 
   const [conv] = await db
@@ -394,16 +396,16 @@ export async function prepararReporteParaChat(
         ),
     },
   };
-}
+});
 
 /**
  * Vuelve a poner como pendiente un reporte ya usado en el hilo, sin regenerarlo.
  * @param adjuntoId Id del adjunto a reutilizar.
  * @returns El resumen del adjunto, ahora marcado como pendiente.
  */
-export async function reutilizarAdjunto(
+export const reutilizarAdjunto = accion(async (
   adjuntoId: number,
-): Promise<ResumenAdjunto> {
+): Promise<ResumenAdjunto> => {
   const [fila] = await db
     .select({
       id: reportesAdjuntos.id,
@@ -451,12 +453,12 @@ export async function reutilizarAdjunto(
         await leerTpmEfectivo(proveedor, conv?.modelo ?? ""),
       ),
   };
-}
+});
 
-export async function descartarAdjuntoPendiente(conversacionId: number) {
+export const descartarAdjuntoPendiente = accion(async (conversacionId: number) => {
   await descartarPendiente(conversacionId);
   revalidatePath("/reportes/asistente");
-}
+});
 
 async function descartarPendiente(conversacionId: number) {
   const pendientes = and(

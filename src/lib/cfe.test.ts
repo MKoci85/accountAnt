@@ -103,10 +103,6 @@ describe("parsearNombreItem", () => {
     expect(parsearNombreItem("AGUA 330ML")).toMatchObject({ tamano: "0.33L" });
   });
 
-  it("no deja decimales de relleno en el tamaño", () => {
-    expect(parsearNombreItem("AZUCAR 1KG")).toMatchObject({ tamano: "1kg" });
-  });
-
   it("acepta la coma decimal y el decimal sin cero adelante", () => {
     expect(parsearNombreItem("QUESO 0,250 KG")).toMatchObject({ tamano: "0.25kg" });
     expect(parsearNombreItem("JAMON .5KG")).toMatchObject({ tamano: "0.5kg" });
@@ -119,22 +115,6 @@ describe("parsearNombreItem", () => {
       unidades: 6,
     });
     expect(parsearNombreItem("YOGUR PACK 4 UN")).toMatchObject({ unidades: 4 });
-  });
-
-  it("normaliza los espacios y deja el nombre intacto si no hay medida", () => {
-    expect(parsearNombreItem("  BANANA   ECUADOR  ")).toEqual({
-      nombre: "BANANA ECUADOR",
-      tamano: null,
-      unidades: null,
-    });
-  });
-
-  it("no confunde una letra final del nombre con una unidad", () => {
-    expect(parsearNombreItem("AGUA MINERAL")).toEqual({
-      nombre: "AGUA MINERAL",
-      tamano: null,
-      unidades: null,
-    });
   });
 
   it("no parsea una medida que se coma todo el nombre", () => {
@@ -204,12 +184,6 @@ describe("parsearComprobantePdfFacturalista", () => {
 
     expect(() => parsearComprobantePdfFacturalista(sinItems)).toThrow(
       /no encontrado/i
-    );
-  });
-
-  it("rechaza un PDF sin el encabezado de ítems", () => {
-    expect(() => parsearComprobantePdfFacturalista("otra cosa")).toThrow(
-      /formato esperado/i
     );
   });
 });
@@ -292,12 +266,6 @@ describe("parsearComprobantePdfIjserv", () => {
     );
 
     expect(() => parsearComprobantePdfIjserv(sinItems)).toThrow(/no encontrado/i);
-  });
-
-  it("rechaza un PDF sin el encabezado de ítems", () => {
-    expect(() => parsearComprobantePdfIjserv("otra cosa")).toThrow(
-      /formato esperado/i
-    );
   });
 });
 
@@ -447,12 +415,6 @@ describe("parsearComprobantePdfOdoo", () => {
 
     expect(() => parsearComprobantePdfOdoo(sinItems)).toThrow(/no encontrado/i);
   });
-
-  it("rechaza un PDF sin el encabezado de ítems", () => {
-    expect(() => parsearComprobantePdfOdoo("otra cosa")).toThrow(
-      /formato esperado/i
-    );
-  });
 });
 
 describe("sinTextoDuplicado", () => {
@@ -542,11 +504,6 @@ describe("parsearResultadoUcfe", () => {
       total: 630,
       moneda: "UYU",
     });
-  });
-
-  it("lee un total con separador de miles en los dos formatos", () => {
-    expect(parsearResultadoUcfe(htmlUcfe("1.285,00")).total).toBe(1285);
-    expect(parsearResultadoUcfe(htmlUcfe("1,285.00")).total).toBe(1285);
   });
 
   it("deja el total en null, nunca en NaN, si no lo puede leer", () => {

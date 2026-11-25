@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -152,9 +153,9 @@ export function GastoFijoDialog({
         meses: todosLosMeses ? null : mesesElegidos,
       };
       if (plantillaExistente) {
-        await editarGastoFijo(plantillaExistente.id, datos);
+        desenvolver(await editarGastoFijo(plantillaExistente.id, datos));
       } else {
-        await crearGastoFijo(datos);
+        desenvolver(await crearGastoFijo(datos));
       }
       onGuardado();
       onOpenChange(false);
@@ -312,7 +313,12 @@ export function GastoFijoDialog({
             onElegir: async () => {
               const nombreEmisor = emisorQuery.trim();
               if (!nombreEmisor) return;
-              elegirEmisor(await crearEmisor({ nombre: nombreEmisor }));
+              setError(null);
+              try {
+                elegirEmisor(desenvolver(await crearEmisor({ nombre: nombreEmisor })));
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "No se pudo crear el comercio");
+              }
             },
           }}
           placeholder="Buscar comercio..."

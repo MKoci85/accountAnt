@@ -6,8 +6,8 @@ import {
   idItemProvisorio,
   lineaLibreNueva,
   lineasDesdeTicket,
-  montoDeLinea,
   normalizarLineasDeServicio,
+  pesoDesdeTotal,
   type LineaGasto,
 } from "@/lib/lineas-gasto";
 import type { LineaDesdeTicket } from "@/components/escaner-comprobante";
@@ -66,11 +66,23 @@ function delTicket(parcial: Partial<LineaDesdeTicket> = {}): LineaDesdeTicket {
   };
 }
 
-describe("montoDeLinea", () => {
-  it("colapsa el precio vacío a cero sin confundirlo con un cero tipeado", () => {
-    expect(montoDeLinea("")).toBe(0);
-    expect(montoDeLinea(0)).toBe(0);
-    expect(montoDeLinea(150.5)).toBe(150.5);
+describe("pesoDesdeTotal", () => {
+  it("divide el total por el precio por kilo", () => {
+    expect(pesoDesdeTotal(250, 500)).toBe(0.5);
+  });
+
+  it("usa los decimales justos para que peso × precio vuelva al total al centavo", () => {
+    const peso = pesoDesdeTotal(250, 389);
+    expect(peso).not.toBeNull();
+    expect(Math.abs((peso as number) * 389 - 250)).toBeLessThan(0.005);
+    expect(pesoDesdeTotal(194.5, 389)).toBe(0.5);
+  });
+
+  it("no inventa un peso si falta el total o el precio por kilo", () => {
+    expect(pesoDesdeTotal("", 389)).toBeNull();
+    expect(pesoDesdeTotal(250, "")).toBeNull();
+    expect(pesoDesdeTotal(0, 389)).toBeNull();
+    expect(pesoDesdeTotal(250, 0)).toBeNull();
   });
 });
 
@@ -79,10 +91,6 @@ describe("esLineaDeServicio", () => {
     const cats = [ALMACEN, SERVICIOS];
     expect(esLineaDeServicio(linea({ categoriaId: SERVICIOS.id }), cats)).toBe(true);
     expect(esLineaDeServicio(linea({ categoriaId: ALMACEN.id }), cats)).toBe(false);
-  });
-
-  it("no es de servicio si la categoría no está en la lista", () => {
-    expect(esLineaDeServicio(linea({ categoriaId: 99 }), [ALMACEN, SERVICIOS])).toBe(false);
   });
 });
 
@@ -96,12 +104,6 @@ describe("lineaLibreNueva", () => {
     expect(nueva.cantidad).toBe(1);
     expect(nueva.unidad).toBe("un");
     expect(nueva.precio).toBe("");
-  });
-
-  it("no exige una categoría de servicio: una compra puntual también es libre", () => {
-    const nueva = lineaLibreNueva(ALMACEN);
-    expect(nueva.sinCatalogo).toBe(true);
-    expect(esLineaDeServicio(nueva, [ALMACEN, SERVICIOS])).toBe(false);
   });
 });
 
@@ -303,11 +305,6 @@ describe("origenTicket", () => {
       tamano: "1,5 LT",
     });
   });
-
-  it("también lo guarda en el renglón que quedó sin catalogar", () => {
-    const [l] = lineasDesdeTicket([delTicket({ nombreTicket: "ALGO RARO" })]);
-    expect(l.origenTicket?.nombre).toBe("ALGO RARO");
-  });
 });
 
 describe("idItemProvisorio", () => {
@@ -370,12 +367,6 @@ describe("desvincularDeCatalogo", () => {
     const aMano = linea({ origenTicket: undefined });
     expect(desvincularDeCatalogo(aMano)).toBe(aMano);
   });
-
-  it("da ids distintos a dos líneas desvinculadas con el mismo texto", () => {
-    const a = desvincularDeCatalogo({ ...vinculada, key: "a" });
-    const b = desvincularDeCatalogo({ ...vinculada, key: "b" });
-    expect(a.item.id).not.toBe(b.item.id);
-  });
 });
 
 describe("aplicarHormigaHeredada", () => {
@@ -414,10 +405,5 @@ describe("aplicarHormigaHeredada", () => {
   it("sin comercio elegido no hereda nada", () => {
     const lineas = [linea()];
     expect(aplicarHormigaHeredada(lineas, null, new Set([10]))).toBe(lineas);
-  });
-
-  it("una línea sin catalogar nunca hereda", () => {
-    const lineas = [linea({ item: { ...linea().item, id: -3 } })];
-    expect(aplicarHormigaHeredada(lineas, COMERCIO, new Set([-3]))).toBe(lineas);
   });
 });

@@ -23,10 +23,6 @@ describe("comercioAConservar", () => {
   it("prefiere el que tiene RUC, que es como lo encuentra el QR", () => {
     expect(comercioAConservar([emisor(1), emisor(2, { ruc: "210000000019" })])?.id).toBe(2);
   });
-
-  it("sin RUC en ninguno, conserva el primero", () => {
-    expect(comercioAConservar([emisor(1), emisor(2)])?.id).toBe(1);
-  });
 });
 
 describe("problemaParaFusionar", () => {

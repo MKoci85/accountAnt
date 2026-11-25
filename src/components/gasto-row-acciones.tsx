@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, Pencil, Trash2 } from "lucide-react";
@@ -67,7 +68,7 @@ export function BorrarGastoAccion({ gastoId }: { gastoId: number }) {
         titulo="¿Borrar este gasto?"
         descripcion="Esta acción no se puede deshacer. Se van a borrar todas sus líneas."
         onConfirmar={async () => {
-          await borrarGasto(gastoId);
+          desenvolver(await borrarGasto(gastoId));
           router.refresh();
         }}
       />

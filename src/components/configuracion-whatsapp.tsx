@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { MessageCircle, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -78,7 +79,7 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
             onChange={(e) => {
               const nuevo = e.target.checked;
               setActivo(nuevo);
-              guardar(activo, setActivo, () => guardarActivoWhatsapp(nuevo));
+              guardar(activo, setActivo, () => guardarActivoWhatsapp(nuevo).then(desenvolver));
             }}
             className="mt-0.5 h-3.5 w-3.5 accent-primary"
           />
@@ -107,14 +108,14 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
           valor=""
           porDefecto={inicial.tokenEnmascarado ?? "sin configurar"}
           ayuda="El token permanente del usuario del sistema. Se guarda acá y no vuelve a mostrarse completo; para cambiarlo, pegá el nuevo."
-          onGuardar={(v) => guardarCampoWhatsapp("token", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("token", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="Clave secreta de la app"
           valor=""
           porDefecto={inicial.appSecretEnmascarado ?? "sin configurar"}
           ayuda="Con esto se comprueba que cada mensaje viene de Meta. Sin ella no se acepta ninguno."
-          onGuardar={(v) => guardarCampoWhatsapp("appSecret", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("appSecret", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="Identificador del número de teléfono"
@@ -122,7 +123,7 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
           porDefecto=""
           ayuda="El id que Meta le da al número de la API (no es el teléfono). Sólo se procesan los mensajes dirigidos a él."
           permiteVacio
-          onGuardar={(v) => guardarCampoWhatsapp("phoneNumberId", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("phoneNumberId", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="Números autorizados"
@@ -130,7 +131,7 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
           porDefecto=""
           ayuda="De quién se aceptan fotos, con código de país y separados por coma (59899123456). Un mensaje de cualquier otro número se ignora sin contestar."
           permiteVacio
-          onGuardar={(v) => guardarCampoWhatsapp("numeros", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("numeros", v).then(desenvolver)}
         />
 
         <div className="flex flex-col gap-2 rounded-lg border border-border/60 px-3.5 py-3">
@@ -144,7 +145,7 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
             onChange={(e) => {
               const nuevo = e.target.value as ModoRespuesta;
               setRespuesta(nuevo);
-              guardar(respuesta, setRespuesta, () => guardarRespuestaWhatsapp(nuevo));
+              guardar(respuesta, setRespuesta, () => guardarRespuestaWhatsapp(nuevo).then(desenvolver));
             }}
             className="h-9 w-auto self-start text-[12.5px]"
           >
@@ -165,14 +166,14 @@ export function ConfiguracionWhatsapp({ inicial }: { inicial: EstadoWhatsapp }) 
           porDefecto={inicial.urlBasePorDefecto}
           ayuda="Sin versión usa la que la app de Meta tenga por defecto. Para fijar una: https://graph.facebook.com/v23.0"
           permiteVacio
-          onGuardar={(v) => guardarCampoWhatsapp("urlBase", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("urlBase", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="Timeout de Meta (ms)"
           valor={String(inicial.timeoutMs)}
           porDefecto={String(inicial.timeoutPorDefecto)}
           permiteVacio
-          onGuardar={(v) => guardarCampoWhatsapp("timeoutMs", v)}
+          onGuardar={(v) => guardarCampoWhatsapp("timeoutMs", v).then(desenvolver)}
         />
 
         <div className="flex flex-wrap items-center gap-3">

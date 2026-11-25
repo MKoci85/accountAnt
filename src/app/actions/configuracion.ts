@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { revalidatePath } from "next/cache";
 import {
   configDe,
@@ -159,29 +160,29 @@ export async function obtenerAjustesBandeja(): Promise<AjustesBandeja> {
   return leerAjustesBandeja();
 }
 
-export async function guardarAjusteBandeja(
+export const guardarAjusteBandeja = accion(async (
   ajuste: keyof AjustesBandeja,
   activo: boolean,
-) {
+) => {
   if (!esAjusteBandeja(ajuste)) {
     throw new Error("Ajuste de bandeja desconocido");
   }
   await escribirAjusteBandeja(ajuste, activo);
   // El aviso del layout depende del bloqueo, y vive en todas las pantallas.
   revalidatePath("/", "layout");
-}
+});
 
 export async function obtenerLimitadorIA(): Promise<boolean> {
   return leerLimitadorActivo();
 }
 
-export async function guardarLimitadorIA(activo: boolean) {
+export const guardarLimitadorIA = accion(async (activo: boolean) => {
   await escribirLimitadorActivo(activo);
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
-}
+});
 
-export async function guardarApiKeyIA(proveedor: ProveedorIA, apiKey: string) {
+export const guardarApiKeyIA = accion(async (proveedor: ProveedorIA, apiKey: string) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -193,9 +194,9 @@ export async function guardarApiKeyIA(proveedor: ProveedorIA, apiKey: string) {
 
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
-}
+});
 
-export async function borrarApiKeyIA(proveedor: ProveedorIA) {
+export const borrarApiKeyIA = accion(async (proveedor: ProveedorIA) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -203,7 +204,7 @@ export async function borrarApiKeyIA(proveedor: ProveedorIA) {
   await limpiarLegacySi(proveedor);
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
-}
+});
 
 async function limpiarLegacySi(proveedor: ProveedorIA) {
   if ((await leerProveedorIA()) === proveedor) {
@@ -211,7 +212,7 @@ async function limpiarLegacySi(proveedor: ProveedorIA) {
   }
 }
 
-export async function guardarModeloIA(proveedor: ProveedorIA, modelo: string) {
+export const guardarModeloIA = accion(async (proveedor: ProveedorIA, modelo: string) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -220,7 +221,7 @@ export async function guardarModeloIA(proveedor: ProveedorIA, modelo: string) {
   else await borrarConfig(claveModelo(proveedor));
 
   revalidatePath("/ajustes");
-}
+});
 
 /**
  * Guarda los modelos a los que saltan las lecturas de fotos y PDF cuando el
@@ -228,22 +229,22 @@ export async function guardarModeloIA(proveedor: ProveedorIA, modelo: string) {
  * @param proveedor Proveedor al que pertenece la lista.
  * @param modelos Ids separados por coma; vacío vuelve al default del código.
  */
-export async function guardarModelosRespaldoIA(
+export const guardarModelosRespaldoIA = accion(async (
   proveedor: ProveedorIA,
   modelos: string,
-) {
+) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
   await escribirModelosRespaldo(proveedor, modelos);
   revalidatePath("/ajustes");
-}
+});
 
-export async function guardarTpmIA(
+export const guardarTpmIA = accion(async (
   proveedor: ProveedorIA,
   modelo: string,
   tpm: number | null,
-) {
+) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -254,9 +255,9 @@ export async function guardarTpmIA(
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
   revalidatePath("/reportes/asistente");
-}
+});
 
-export async function guardarRpdIA(proveedor: ProveedorIA, rpd: number | null) {
+export const guardarRpdIA = accion(async (proveedor: ProveedorIA, rpd: number | null) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -267,9 +268,9 @@ export async function guardarRpdIA(proveedor: ProveedorIA, rpd: number | null) {
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
   revalidatePath("/reportes/asistente");
-}
+});
 
-export async function guardarProveedorActivoIA(proveedor: ProveedorIA) {
+export const guardarProveedorActivoIA = accion(async (proveedor: ProveedorIA) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -278,7 +279,7 @@ export async function guardarProveedorActivoIA(proveedor: ProveedorIA) {
   await escribirConfig(CLAVE_PROVEEDOR, proveedor);
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
-}
+});
 
 export type ConfigAvanzada = {
   [K in Ajuste]: { valor: ValorAjuste<K>; porDefecto: ValorAjuste<K> };
@@ -298,7 +299,7 @@ export async function obtenerConfigAvanzada(): Promise<ConfigAvanzada> {
  * Guarda un ajuste de `AJUSTES`, validando el valor según el tipo de su
  * default: un número tiene que ser positivo y un texto no puede estar vacío.
  */
-export async function guardarAjuste(ajuste: Ajuste, valor: number | string) {
+export const guardarAjuste = accion(async (ajuste: Ajuste, valor: number | string) => {
   if (!esAjuste(ajuste)) throw new Error("Ajuste desconocido");
   const { porDefecto, nombre, revalidar } = AJUSTES[ajuste];
 
@@ -315,19 +316,19 @@ export async function guardarAjuste(ajuste: Ajuste, valor: number | string) {
 
   revalidatePath("/ajustes");
   for (const ruta of revalidar) revalidatePath(ruta);
-}
+});
 
-export async function guardarUrlProveedorIA(
+export const guardarUrlProveedorIA = accion(async (
   proveedor: ProveedorIA,
   url: string,
-) {
+) => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
   await escribirUrlIA(proveedor, url);
   revalidatePath("/ajustes");
   revalidatePath("/estado-cuenta");
-}
+});
 
 /**
  * Refresca el catálogo de modelos sugeridos de un proveedor desde su endpoint
@@ -335,9 +336,9 @@ export async function guardarUrlProveedorIA(
  * @param proveedor Proveedor cuyo catálogo actualizar.
  * @returns Si se pudo actualizar, un mensaje descriptivo y los modelos encontrados.
  */
-export async function actualizarModelosProveedor(
+export const actualizarModelosProveedor = accion(async (
   proveedor: ProveedorIA,
-): Promise<{ ok: boolean; mensaje: string; modelos: string[] }> {
+): Promise<{ ok: boolean; mensaje: string; modelos: string[] }> => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -420,4 +421,4 @@ export async function actualizarModelosProveedor(
     mensaje: `${modelos.length} ${plural} de ${config.nombre}.`,
     modelos,
   };
-}
+});

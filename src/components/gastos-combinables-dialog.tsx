@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -109,13 +110,13 @@ function GrupoCombinable({ grupo }: { grupo: GastoResumen[] }) {
         <Button
           variant="outline"
           disabled={elegidos.length < 2 || isPending}
-          onClick={() => ejecutar(descartarGastosCombinables)}
+          onClick={() => ejecutar((ids) => descartarGastosCombinables(ids).then(desenvolver))}
         >
           Son compras distintas
         </Button>
         <Button
           disabled={motivoNoCombinable !== null || isPending}
-          onClick={() => ejecutar(combinarGastos)}
+          onClick={() => ejecutar((ids) => combinarGastos(ids).then(desenvolver))}
         >
           {isPending ? "Guardando..." : `Combinar ${elegidos.length} gastos`}
         </Button>

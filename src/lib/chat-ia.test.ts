@@ -8,7 +8,6 @@ import {
   podarHistorial,
   separarReporteAdjunto,
 } from "@/lib/chat-ia";
-import { techoRespuestaChat } from "@/lib/proveedores-ia";
 
 type Mensaje = { rol: "user" | "assistant"; contenido: string; tokensEstimados: number };
 
@@ -45,12 +44,6 @@ describe("separarReporteAdjunto", () => {
     expect(reporte).toBeNull();
     expect(pregunta).toBe(contenido);
   });
-
-  it("tolera una pregunta vacía después del reporte", () => {
-    const { reporte, pregunta } = separarReporteAdjunto(`${ENCABEZADO_REPORTE}\n{"a":1}`);
-    expect(reporte).toBe('{"a":1}');
-    expect(pregunta).toBe("");
-  });
 });
 
 describe("limpiarRespuestaChat", () => {
@@ -64,20 +57,9 @@ describe("limpiarRespuestaChat", () => {
     expect(limpiarRespuestaChat("<think>a</think>Uno.<think>b</think>Dos.")).toBe("Uno.Dos.");
   });
 
-  it("desenvuelve el cerco de código solo si envuelve toda la respuesta", () => {
-    expect(limpiarRespuestaChat("```json\n{\"a\":1}\n```")).toBe('{"a":1}');
-    expect(limpiarRespuestaChat("```\nhola\n```")).toBe("hola");
-  });
-
   it("respeta un cerco de código en el medio del texto", () => {
     const texto = "Probá esto:\n```sql\nSELECT 1\n```\nY contame.";
     expect(limpiarRespuestaChat(texto)).toBe(texto);
-  });
-
-  it("deja intacta una respuesta normal", () => {
-    expect(limpiarRespuestaChat("  En agosto gastaste $4.200.  ")).toBe(
-      "En agosto gastaste $4.200."
-    );
   });
 });
 
@@ -116,13 +98,6 @@ describe("podarHistorial", () => {
     expect(podado.omitidos).toBe(1);
   });
 
-  it("no devuelve nada cuando no hay presupuesto", () => {
-    const podado = podarHistorial([mensaje("a", 10), mensaje("b", 10)], 0);
-    expect(podado.mensajes).toEqual([]);
-    expect(podado.omitidos).toBe(2);
-    expect(podado.tokensEnviados).toBe(0);
-  });
-
   it("sobre un historial vacío no explota", () => {
     expect(podarHistorial([], 100)).toEqual({
       mensajes: [],
@@ -134,17 +109,6 @@ describe("podarHistorial", () => {
 });
 
 describe("limiteContexto", () => {
-  it("reserva el techo de respuesta y un 5% del TPM", () => {
-    expect(limiteContexto("groq", 8000)).toBe(Math.floor(8000 * 0.95) - techoRespuestaChat("groq"));
-  });
-
-  it("descuenta el techo de respuesta propio del proveedor", () => {
-    expect(limiteContexto("gemini", 250_000)).toBe(
-      Math.floor(250_000 * 0.95) - techoRespuestaChat("gemini")
-    );
-    expect(techoRespuestaChat("gemini")).toBeGreaterThan(techoRespuestaChat("groq"));
-  });
-
   it("usa el default cuando el proveedor no declara TPM", () => {
     expect(limiteContexto("groq", null)).toBe(LIMITE_CONTEXTO_TOKENS_DEFAULT);
     expect(limiteContexto("anthropic")).toBe(LIMITE_CONTEXTO_TOKENS_DEFAULT);

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -64,12 +65,12 @@ export function ProveedorCfeDialog({
   function handleSubmit() {
     enviar(async () => {
       const proveedor = proveedorExistente
-        ? await editarProveedorCfe(proveedorExistente.id, {
+        ? desenvolver(await editarProveedorCfe(proveedorExistente.id, {
             nombre,
             urlConsulta,
             formato,
-          })
-        : await obtenerOCrearProveedorCfe({ nombre, urlConsulta, formato });
+          }))
+        : desenvolver(await obtenerOCrearProveedorCfe({ nombre, urlConsulta, formato }));
       onGuardado(proveedor);
       onOpenChange(false);
     });

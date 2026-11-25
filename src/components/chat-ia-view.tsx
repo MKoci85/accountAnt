@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -192,7 +193,7 @@ function ListaConversaciones({
         onConfirmar={async () => {
           if (!aBorrar) return;
           const borrada = aBorrar.id;
-          await borrarConversacion(borrada);
+          desenvolver(await borrarConversacion(borrada));
           setABorrar(null);
           if (borrada === activaId) router.push("/reportes/asistente");
           else router.refresh();
@@ -222,7 +223,7 @@ function TituloEditable({
       return;
     }
     startGuardado(async () => {
-      await renombrarConversacion(id, limpio);
+      desenvolver(await renombrarConversacion(id, limpio));
       onCerrar();
       router.refresh();
     });
@@ -308,10 +309,10 @@ function PanelChat({ conversacion }: { conversacion: ConversacionCompleta }) {
     setError(null);
     startAdjunto(async () => {
       try {
-        const { adjunto: nuevo } = await prepararReporteParaChat(
+        const { adjunto: nuevo } = desenvolver(await prepararReporteParaChat(
           mesEnCurso(),
           { tipo: "existente", conversacionId: conversacion.id },
-        );
+        ));
         setAdjunto(nuevo);
       } catch {
         setError("No se pudo generar el reporte para adjuntar.");
@@ -323,7 +324,7 @@ function PanelChat({ conversacion }: { conversacion: ConversacionCompleta }) {
     setError(null);
     startAdjunto(async () => {
       try {
-        const nuevo = await reutilizarAdjunto(id);
+        const nuevo = desenvolver(await reutilizarAdjunto(id));
         setAdjunto(nuevo);
         setPrevios((p) => p.filter((x) => x.id !== id));
       } catch {
@@ -336,7 +337,13 @@ function PanelChat({ conversacion }: { conversacion: ConversacionCompleta }) {
     const quitado = adjunto;
     setAdjunto(null);
     startAdjunto(async () => {
-      await descartarAdjuntoPendiente(conversacion.id);
+      try {
+        desenvolver(await descartarAdjuntoPendiente(conversacion.id));
+      } catch (e) {
+        setAdjunto(quitado);
+        setError(e instanceof Error ? e.message : "No se pudo quitar el reporte adjunto");
+        return;
+      }
       if (quitado?.usadoEn) {
         setPrevios((p) =>
           p.some((x) => x.id === quitado.id) ? p : [quitado, ...p],

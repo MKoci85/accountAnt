@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { db } from "@/db";
 import {
   gastos,
@@ -494,11 +495,11 @@ export async function retomarBorradorEstadoCuenta(): Promise<
   return { ...analisis, estadoCuentaId: fila.estadoCuentaId, conIA: fila.conIA };
 }
 
-export async function descartarBorradorEstadoCuenta() {
+export const descartarBorradorEstadoCuenta = accion(async () => {
   db.delete(estadoCuentaBorrador).run();
   await descartarSinImportar(null);
   revalidatePath("/estado-cuenta");
-}
+});
 
 /**
  * Interpreta un PDF de estado de cuenta con IA (vía para layouts que el
@@ -1000,11 +1001,11 @@ export type ResultadoImportacion = {
  * esa cuota, con el comercio y las categorías de la compra. Si la compra era
  * todavía un gasto común, primero se convierte.
  */
-export async function importarMovimientos(
+export const importarMovimientos = accion(async (
   seleccion: SeleccionImportacion[],
   estadoCuentaId?: number,
   asignaciones: AsignacionCuota[] = []
-): Promise<ResultadoImportacion> {
+): Promise<ResultadoImportacion> => {
   const registro =
     estadoCuentaId === undefined ? null : await registroDeImportacion(estadoCuentaId);
   if (!seleccion.length && !registro) {
@@ -1199,7 +1200,7 @@ export async function importarMovimientos(
   revalidatePath("/estado-cuenta", "layout");
 
   return { importados: seleccion.length, gastoIds, cuotas, avisos };
-}
+});
 
 const COLUMNAS_REGISTRO = {
   id: estadosCuenta.id,
@@ -1280,7 +1281,7 @@ export async function obtenerEstadoCuenta(id: number) {
  * Saca un estado de cuenta del registro y borra su PDF. Los gastos que se
  * importaron desde él quedan: son gastos como cualquier otro.
  */
-export async function borrarEstadoCuenta(id: number) {
+export const borrarEstadoCuenta = accion(async (id: number) => {
   const fila = db
     .select({ archivo: estadosCuenta.archivo })
     .from(estadosCuenta)
@@ -1290,4 +1291,4 @@ export async function borrarEstadoCuenta(id: number) {
   db.delete(estadosCuenta).where(eq(estadosCuenta.id, id)).run();
   await borrarPdfEstadoCuenta(fila.archivo);
   revalidatePath("/estado-cuenta", "layout");
-}
+});

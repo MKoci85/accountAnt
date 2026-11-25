@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState, useTransition } from "react";
 import { Inbox } from "lucide-react";
 import {
@@ -46,7 +47,7 @@ export function ConfiguracionBandeja({ inicial }: { inicial: AjustesBandeja }) {
     setError(null);
     startGuardado(async () => {
       try {
-        await guardarAjusteBandeja(ajuste, activo);
+        desenvolver(await guardarAjusteBandeja(ajuste, activo));
       } catch (e) {
         setAjustes(previo);
         setError(e instanceof Error ? e.message : "No se pudo guardar");

@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -26,10 +27,10 @@ function revalidarCuotas(gastoId?: number) {
  * un estado de cuenta, que es lo que deshace la duplicación.
  * @returns cuántas cuotas ya importadas quedaron vinculadas
  */
-export async function marcarCompraEnCuotas(
+export const marcarCompraEnCuotas = accion(async (
   gastoId: number,
   datos: DatosPlan
-): Promise<{ vinculadas: number }> {
+): Promise<{ vinculadas: number }> => {
   const esCuota = db
     .select({ id: cuotasCompra.id })
     .from(cuotasCompra)
@@ -57,26 +58,26 @@ export async function marcarCompraEnCuotas(
   revalidarCuotas(gastoId);
   revalidatePath("/estado-cuenta", "layout");
   return { vinculadas };
-}
+});
 
 /**
  * Deja de tratar el gasto como compra en cuotas: vuelve a sumar entero en su
  * fecha. Los gastos de las cuotas ya pagadas quedan como gastos sueltos.
  */
-export async function quitarCompraEnCuotas(gastoId: number) {
+export const quitarCompraEnCuotas = accion(async (gastoId: number) => {
   db.delete(comprasEnCuotas).where(eq(comprasEnCuotas.gastoId, gastoId)).run();
   revalidarCuotas(gastoId);
-}
+});
 
 /**
  * Paga a mano una cuota: crea su gasto, igual que si llegara por un estado de
  * cuenta. Es para la cuota que no va a aparecer en ninguno que se importe.
  * @returns el recargo nuevo si el importe corrigió el plan
  */
-export async function pagarCuota(
+export const pagarCuota = accion(async (
   cuotaId: number,
   pago: { importe: number; fecha: string }
-): Promise<{ gastoId: number; interesAjustado: number | null }> {
+): Promise<{ gastoId: number; interesAjustado: number | null }> => {
   if (!esFechaISOValida(pago.fecha)) throw new Error("La fecha no es válida");
   const r = db.transaction((tx) => pagarCuotaEnTx(tx, cuotaId, pago));
   const compra = db
@@ -86,4 +87,4 @@ export async function pagarCuota(
     .get();
   revalidarCuotas(compra?.gastoId);
   return { gastoId: r.gastoId, interesAjustado: r.interesAjustado };
-}
+});

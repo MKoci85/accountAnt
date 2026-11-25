@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useRef, useState, useTransition } from "react";
 import jsQR from "jsqr";
 import { ScanLine, CheckCircle2, AlertTriangle, Lock, Camera, ImageUp } from "lucide-react";
@@ -256,11 +257,11 @@ export function EscanerComprobante({
     if (!resultado || !nombreProcesador.trim() || !urlProcesador.trim()) return;
     startGuardadoProcesador(async () => {
       try {
-        await guardarProveedorEmisor(resultado.emisor.id, {
+        desenvolver(await guardarProveedorEmisor(resultado.emisor.id, {
           nombre: nombreProcesador.trim(),
           urlConsulta: urlProcesador.trim(),
           formato: (procesadorElegido || "otro") as FormatoProveedorCfe,
-        });
+        }));
         const r = await consultarCFE(qrTexto.trim());
         if (!r.ok) {
           setError(r.error);

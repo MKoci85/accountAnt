@@ -1,5 +1,7 @@
 "use server";
 
+import { desenvolver } from "@/lib/resultado";
+import { accion } from "@/lib/acciones-server";
 import { db } from "@/db";
 import {
   categorias,
@@ -21,6 +23,7 @@ import {
   agruparItemsSimilares,
   claveItemExacta,
   clavePar,
+  normalizarTextoComparable,
   paresDe,
   paresHeredados,
 } from "@/lib/duplicados";
@@ -50,12 +53,12 @@ export async function listarCategorias() {
   return db.select().from(categorias).orderBy(asc(categorias.nombre));
 }
 
-export async function crearCategoria(datos: {
+export const crearCategoria = accion(async (datos: {
   nombre: string;
   color?: string;
   descripcion?: string;
   esServicio?: boolean;
-}) {
+}) => {
   const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre de la categoría es obligatorio");
 
@@ -78,9 +81,9 @@ export async function crearCategoria(datos: {
     }
     throw e;
   }
-}
+});
 
-export async function editarCategoria(
+export const editarCategoria = accion(async (
   id: number,
   datos: {
     nombre: string;
@@ -88,7 +91,7 @@ export async function editarCategoria(
     descripcion?: string;
     esServicio?: boolean;
   }
-) {
+) => {
   const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre de la categoría es obligatorio");
 
@@ -112,7 +115,7 @@ export async function editarCategoria(
     }
     throw e;
   }
-}
+});
 
 /**
  * Sugiere una categoría a partir de un texto libre, buscando palabra por
@@ -148,7 +151,7 @@ export async function sugerirCategoriaPorTexto(texto: string) {
   return null;
 }
 
-export async function borrarCategoria(id: number) {
+export const borrarCategoria = accion(async (id: number) => {
   const [enItems] = await db
     .select({ id: itemsCatalogo.id })
     .from(itemsCatalogo)
@@ -184,7 +187,7 @@ export async function borrarCategoria(id: number) {
 
   await db.delete(categorias).where(eq(categorias.id, id));
   revalidarCatalogos();
-}
+});
 
 export async function listarItemsCatalogo() {
   return db
@@ -328,13 +331,13 @@ async function verificarItemNoRepetido(
   }
 }
 
-export async function crearItemCatalogo(datos: {
+export const crearItemCatalogo = accion(async (datos: {
   nombre: string;
   marca?: string;
   tamano?: string;
   descripcion?: string;
   categoriaId: number;
-}) {
+}) => {
   const nombreLimpio = datos.nombre.trim().toUpperCase();
   if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
   const marca = datos.marca?.trim().toUpperCase() || null;
@@ -354,9 +357,9 @@ export async function crearItemCatalogo(datos: {
 
   revalidarCatalogos();
   return item;
-}
+});
 
-export async function editarItemCatalogo(
+export const editarItemCatalogo = accion(async (
   id: number,
   datos: {
     nombre: string;
@@ -365,7 +368,7 @@ export async function editarItemCatalogo(
     descripcion?: string;
     categoriaId: number;
   }
-) {
+) => {
   const nombreLimpio = datos.nombre.trim().toUpperCase();
   if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
   const marca = datos.marca?.trim().toUpperCase() || null;
@@ -409,9 +412,9 @@ export async function editarItemCatalogo(
 
   revalidarCatalogos();
   return item;
-}
+});
 
-export async function borrarItemCatalogo(id: number) {
+export const borrarItemCatalogo = accion(async (id: number) => {
   const [enUso] = await db
     .select({ id: gastoItems.id })
     .from(gastoItems)
@@ -423,7 +426,7 @@ export async function borrarItemCatalogo(id: number) {
 
   await db.delete(itemsCatalogo).where(eq(itemsCatalogo.id, id));
   revalidarCatalogos();
-}
+});
 
 /**
  * @returns cuántas líneas de gasto usa cada ítem del catálogo, para decidir
@@ -476,7 +479,7 @@ export async function contarGruposItemsSimilares() {
  * aparecer como similares entre sí. Se guarda por par: marcar A, B y C
  * descarta A-B, A-C y B-C, pero ninguno de ellos contra un cuarto ítem.
  */
-export async function descartarItemsSimilares(ids: number[]) {
+export const descartarItemsSimilares = accion(async (ids: number[]) => {
   const pares = paresDe(ids);
   if (pares.length === 0) {
     throw new Error("Elegí al menos dos ítems");
@@ -486,7 +489,7 @@ export async function descartarItemsSimilares(ids: number[]) {
     .values(pares.map(([itemMenorId, itemMayorId]) => ({ itemMenorId, itemMayorId })))
     .onConflictDoNothing();
   revalidarCatalogos();
-}
+});
 
 /**
  * Combina ítems del catálogo cargados por duplicado en uno solo. Todo lo que
@@ -507,13 +510,13 @@ export async function descartarItemsSimilares(ids: number[]) {
  * @returns el ítem conservado con los datos elegidos, y los pares
  * descartados ya con los heredados.
  */
-export async function combinarItemsCatalogo(datos: {
+export const combinarItemsCatalogo = accion(async (datos: {
   conservarId: number;
   absorberIds: number[];
   nombre: string;
   marca?: string;
   tamano?: string;
-}) {
+}) => {
   const nombreLimpio = datos.nombre.trim().toUpperCase();
   if (!nombreLimpio) throw new Error("El nombre del ítem es obligatorio");
   const absorberIds = [...new Set(datos.absorberIds)].filter(
@@ -631,7 +634,7 @@ export async function combinarItemsCatalogo(datos: {
     item: { ...item, categoriaNombre: categoria?.nombre ?? "" },
     descartados: await listarItemsSimilaresDescartados(),
   };
-}
+});
 
 export async function buscarItemsCatalogo(query: string) {
   const q = query.trim();
@@ -670,11 +673,11 @@ export async function listarProveedoresCfe() {
  * Busca un proveedor de CFE por nombre (case-insensitive) o lo crea si no existe.
  * @returns El proveedor existente o el recién creado.
  */
-export async function obtenerOCrearProveedorCfe(datos: {
+export const obtenerOCrearProveedorCfe = accion(async (datos: {
   nombre: string;
   urlConsulta: string;
   formato: FormatoProveedorCfe;
-}) {
+}) => {
   const nombreLimpio = datos.nombre.trim();
   const urlLimpia = datos.urlConsulta.trim();
   if (!nombreLimpio) throw new Error("El nombre del proveedor es obligatorio");
@@ -694,12 +697,12 @@ export async function obtenerOCrearProveedorCfe(datos: {
 
   revalidarCatalogos();
   return creado;
-}
+});
 
-export async function editarProveedorCfe(
+export const editarProveedorCfe = accion(async (
   id: number,
   datos: { nombre: string; urlConsulta: string; formato: FormatoProveedorCfe }
-) {
+) => {
   const nombreLimpio = datos.nombre.trim();
   const urlLimpia = datos.urlConsulta.trim();
   if (!nombreLimpio) throw new Error("El nombre del proveedor es obligatorio");
@@ -727,9 +730,9 @@ export async function editarProveedorCfe(
 
   revalidarCatalogos();
   return proveedor;
-}
+});
 
-export async function borrarProveedorCfe(id: number) {
+export const borrarProveedorCfe = accion(async (id: number) => {
   const enUso = await db
     .select({ nombre: emisores.nombre })
     .from(emisores)
@@ -745,7 +748,7 @@ export async function borrarProveedorCfe(id: number) {
 
   await db.delete(proveedoresCfe).where(eq(proveedoresCfe.id, id));
   revalidarCatalogos();
-}
+});
 
 export async function listarEmisores() {
   return db.select().from(emisores).orderBy(asc(emisores.nombre));
@@ -781,19 +784,44 @@ async function verificarRucLibre(ruc: string, idExcluido?: number) {
 
   if (duenio) {
     throw new Error(
-      `El RUC "${ruc}" ya pertenece al emisor "${duenio.nombre}"`
+      `El RUC "${ruc}" ya pertenece al comercio "${duenio.nombre}".`
     );
   }
 }
 
-export async function crearEmisor(datos: {
+/**
+ * Rechaza un nombre que ya usa otro comercio. `emisores.nombre` no tiene
+ * `UNIQUE` (el que crea un QR o un estado de cuenta toma el nombre tal cual
+ * llega), así que sin esto un alta a mano dejaba un duplicado en silencio.
+ * Compara sin mayúsculas, tildes ni signos, en JS: `LOWER()` de SQLite no
+ * toca las tildes.
+ */
+async function verificarNombreLibre(nombre: string, idExcluido?: number) {
+  const buscado = normalizarTextoComparable(nombre);
+  const todos = await db
+    .select({ id: emisores.id, nombre: emisores.nombre })
+    .from(emisores);
+  const repetido = todos.find(
+    (e) => e.id !== idExcluido && normalizarTextoComparable(e.nombre) === buscado
+  );
+  if (repetido) {
+    throw new Error(
+      idExcluido === undefined
+        ? `Ya existe un comercio llamado "${repetido.nombre}": elegilo de la lista en vez de crear otro.`
+        : `Ya existe otro comercio llamado "${repetido.nombre}". Si son el mismo, fusionalos desde la lista de comercios en vez de renombrar este.`
+    );
+  }
+}
+
+export const crearEmisor = accion(async (datos: {
   nombre: string;
   ruc?: string;
   proveedorCfeId?: number | null;
-}) {
+}) => {
   const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre es obligatorio");
 
+  await verificarNombreLibre(nombreLimpio);
   const rucLimpio = normalizarRuc(datos.ruc ?? "") || null;
   if (rucLimpio) await verificarRucLibre(rucLimpio);
 
@@ -808,7 +836,7 @@ export async function crearEmisor(datos: {
 
   revalidarCatalogos();
   return emisor;
-}
+});
 
 export async function obtenerEmisorPorRuc(ruc: string) {
   const [emisor] = await db
@@ -865,11 +893,11 @@ export async function crearEmisorPorRuc(datos: { ruc: string; nombre: string }) 
 /**
  * Mapea un emisor a su proveedor de CFE, creando el proveedor si no existe.
  */
-export async function guardarProveedorEmisor(
+export const guardarProveedorEmisor = accion(async (
   id: number,
   datos: { nombre: string; urlConsulta: string; formato: FormatoProveedorCfe }
-) {
-  const proveedor = await obtenerOCrearProveedorCfe(datos);
+) => {
+  const proveedor = desenvolver(await obtenerOCrearProveedorCfe(datos));
 
   const [emisor] = await db
     .update(emisores)
@@ -879,7 +907,7 @@ export async function guardarProveedorEmisor(
 
   revalidarCatalogos();
   return emisor;
-}
+});
 
 export async function obtenerOCrearEmisorGenerico() {
   const [existente] = await db
@@ -897,13 +925,14 @@ export async function obtenerOCrearEmisorGenerico() {
   return creado;
 }
 
-export async function editarEmisor(
+export const editarEmisor = accion(async (
   id: number,
   datos: { nombre: string; ruc?: string; proveedorCfeId?: number | null }
-) {
+) => {
   const nombreLimpio = datos.nombre.trim();
   if (!nombreLimpio) throw new Error("El nombre es obligatorio");
 
+  await verificarNombreLibre(nombreLimpio, id);
   const rucLimpio = normalizarRuc(datos.ruc ?? "") || null;
   if (rucLimpio) await verificarRucLibre(rucLimpio, id);
 
@@ -919,9 +948,9 @@ export async function editarEmisor(
 
   revalidarCatalogos();
   return emisor;
-}
+});
 
-export async function borrarEmisor(id: number) {
+export const borrarEmisor = accion(async (id: number) => {
   const [enUso] = await db
     .select({ id: gastos.id })
     .from(gastos)
@@ -944,7 +973,7 @@ export async function borrarEmisor(id: number) {
 
   await db.delete(emisores).where(eq(emisores.id, id));
   revalidarCatalogos();
-}
+});
 
 /**
  * Fusiona comercios que son el mismo (típicamente uno con RUC, creado por el
@@ -957,10 +986,10 @@ export async function borrarEmisor(id: number) {
  * por ítem, y el hormiga heredado por ítem y comercio se unifica solo.
  * @returns el comercio que queda y cuántos gastos se movieron
  */
-export async function combinarEmisores(datos: {
+export const combinarEmisores = accion(async (datos: {
   conservarId: number;
   absorberIds: number[];
-}): Promise<{ emisor: typeof emisores.$inferSelect; gastosMovidos: number }> {
+}): Promise<{ emisor: typeof emisores.$inferSelect; gastosMovidos: number }> => {
   const ids = [datos.conservarId, ...new Set(datos.absorberIds)];
   const filas = db.select().from(emisores).where(inArray(emisores.id, ids)).all();
   const conservar = filas.find((e) => e.id === datos.conservarId);
@@ -1031,7 +1060,7 @@ export async function combinarEmisores(datos: {
   revalidatePath("/gastos-fijos");
   revalidatePath("/bandeja");
   return resultado;
-}
+});
 
 /** Los textos de estado de cuenta que se resuelven a este comercio. */
 export async function listarAliasEmisor(emisorId: number) {
@@ -1047,7 +1076,7 @@ export async function listarAliasEmisor(emisorId: number) {
  * Quita un alias: el próximo estado de cuenta con ese texto vuelve a
  * preguntar a qué comercio va. Es como se deshace un comercio mal elegido.
  */
-export async function borrarAliasEmisor(id: number) {
+export const borrarAliasEmisor = accion(async (id: number) => {
   db.delete(emisorAlias).where(eq(emisorAlias.id, id)).run();
   revalidatePath("/catalogos");
-}
+});

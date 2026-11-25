@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState, useTransition } from "react";
 import { Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ export function ConfiguracionEndpointsDialog({
           valor={inicial.bcuUrl.valor}
           porDefecto={inicial.bcuUrl.porDefecto}
           ayuda="Endpoint SOAP del que se saca la cotización del dólar al importar un estado de cuenta en USD."
-          onGuardar={(v) => guardarAjuste("bcuUrl", v)}
+          onGuardar={(v) => guardarAjuste("bcuUrl", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Timeout del BCU"
@@ -36,14 +37,14 @@ export function ConfiguracionEndpointsDialog({
           valor={inicial.bcuTimeoutMs.valor}
           porDefecto={inicial.bcuTimeoutMs.porDefecto}
           ayuda="Cuánto se espera la respuesta del BCU antes de dar la cotización por perdida. Al vencerse, la línea queda para carga manual."
-          onGuardar={(v) => guardarAjuste("bcuTimeoutMs", v)}
+          onGuardar={(v) => guardarAjuste("bcuTimeoutMs", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="URL de consulta de CFE de DGI"
           valor={inicial.dgiUrl.valor}
           porDefecto={inicial.dgiUrl.porDefecto}
           ayuda="Con esta URL se valida que el QR de un ticket corresponda a un comprobante autorizado."
-          onGuardar={(v) => guardarAjuste("dgiUrl", v)}
+          onGuardar={(v) => guardarAjuste("dgiUrl", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Timeout de DGI y los proveedores de CFE"
@@ -51,7 +52,7 @@ export function ConfiguracionEndpointsDialog({
           valor={inicial.cfeTimeoutMs.valor}
           porDefecto={inicial.cfeTimeoutMs.porDefecto}
           ayuda="Cuánto se espera cada consulta al escanear un comprobante. Al vencerse la de DGI, el comprobante no se valida; al vencerse la del proveedor, queda sin el detalle de ítems y se puede completar a mano."
-          onGuardar={(v) => guardarAjuste("cfeTimeoutMs", v)}
+          onGuardar={(v) => guardarAjuste("cfeTimeoutMs", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Timeout de las consultas con IA"
@@ -59,7 +60,7 @@ export function ConfiguracionEndpointsDialog({
           valor={inicial.iaTimeoutMs.valor}
           porDefecto={inicial.iaTimeoutMs.porDefecto}
           ayuda="Compartido por todos los proveedores. Analizar una foto de un estado de cuenta puede tardar bastante: bajarlo mucho corta consultas que iban a responder."
-          onGuardar={(v) => guardarAjuste("iaTimeoutMs", v)}
+          onGuardar={(v) => guardarAjuste("iaTimeoutMs", v).then(desenvolver)}
         />
         <CampoNumero
           etiqueta="Timeout del chat del asistente"
@@ -67,14 +68,14 @@ export function ConfiguracionEndpointsDialog({
           valor={inicial.iaTimeoutChatMs.valor}
           porDefecto={inicial.iaTimeoutChatMs.porDefecto}
           ayuda="Separado del anterior porque una respuesta de chat es corta: esperar dos minutos por ella no tiene sentido. Si el proveedor que usás es lento, subilo."
-          onGuardar={(v) => guardarAjuste("iaTimeoutChatMs", v)}
+          onGuardar={(v) => guardarAjuste("iaTimeoutChatMs", v).then(desenvolver)}
         />
         <CampoTexto
           etiqueta="HTTP-Referer de OpenRouter"
           valor={inicial.openRouterReferer.valor}
           porDefecto={inicial.openRouterReferer.porDefecto}
           ayuda="OpenRouter lo usa para atribuir el tráfico en tu cuenta. El default apunta a localhost: si servís la app por Tailscale, poné acá esa dirección para que las consultas se atribuyan bien."
-          onGuardar={(v) => guardarAjuste("openRouterReferer", v)}
+          onGuardar={(v) => guardarAjuste("openRouterReferer", v).then(desenvolver)}
         />
       </div>
     </SeccionColapsable>

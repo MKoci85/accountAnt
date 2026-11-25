@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Lock, Pencil, Trash2, Unlink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { BadgeLinea } from "@/components/badge-linea";
@@ -17,6 +18,7 @@ import { formatearMonto } from "@/lib/formato";
 import {
   esLineaDeServicio,
   montoDeLinea,
+  pesoDesdeTotal,
   type LineaGasto,
 } from "@/lib/lineas-gasto";
 import type { ItemCatalogoConCategoria } from "@/components/nuevo-item-dialog";
@@ -92,6 +94,50 @@ export function LineaGastoFila({
   const puedeNoSaberElPeso =
     linea.item.nombre !== ITEM_PAGO_TARJETA &&
     (linea.unidad !== "un" || sinPeso);
+  const [totalPagado, setTotalPagado] = useState<number | "" | null>(null);
+  const calculaPeso =
+    totalPagado !== null &&
+    !sinPeso &&
+    !esServicio &&
+    !linea.bloqueada &&
+    linea.unidad !== "un";
+  const referencia =
+    linea.item.id > 0 && linea.item.nombre !== ITEM_PAGO_TARJETA
+      ? referenciaDeLinea(linea)
+      : undefined;
+
+  function cambiarTotalPagado(total: number | "") {
+    setTotalPagado(total);
+    actualizarLinea(linea.key, {
+      cantidad: pesoDesdeTotal(total, linea.precio) ?? 0,
+    });
+  }
+
+  function cambiarPrecio(precio: number | "") {
+    actualizarLinea(linea.key, {
+      precio,
+      ...(calculaPeso
+        ? { cantidad: pesoDesdeTotal(totalPagado, precio) ?? 0 }
+        : {}),
+    });
+  }
+
+  function pasarACalcularPeso() {
+    const totalActual = montoDeLinea(linea.precio) * linea.cantidad;
+    const total = sinPeso
+      ? linea.precio
+      : totalActual > 0
+        ? Number(totalActual.toFixed(2))
+        : "";
+    const precio = sinPeso ? (referencia ?? "") : linea.precio;
+    setTotalPagado(total);
+    actualizarLinea(linea.key, {
+      esPesoDesconocido: false,
+      precio,
+      cantidad: pesoDesdeTotal(total, precio) ?? 0,
+      ...(sinPeso ? { sobreprecioManual: false } : {}),
+    });
+  }
   return (
     <div
       className="flex flex-col gap-2 px-5 py-3.5 md:grid md:grid-cols-[1fr_140px_80px_110px_120px_28px] md:items-center md:gap-3"
@@ -221,6 +267,7 @@ export function LineaGastoFila({
                 value={linea.unidad}
                 onChange={(e) => {
                   const unidad = normalizarUnidad(e.target.value);
+                  setTotalPagado(null);
                   actualizarLinea(linea.key, {
                     unidad,
                     ...(unidad === "un" ? { esPesoDesconocido: false } : {}),
@@ -271,7 +318,44 @@ export function LineaGastoFila({
         )}
       </div>
       <div className="flex flex-col gap-0.5">
-      {!esServicio && (
+      {!esServicio && calculaPeso && (
+        <>
+          <label
+            htmlFor={`total-${linea.key}`}
+            className="text-[11px] font-medium text-muted-foreground md:hidden"
+          >
+            Total pagado
+          </label>
+          <Input
+            id={`total-${linea.key}`}
+            type="number"
+            onWheel={(e) => e.currentTarget.blur()}
+            min={0}
+            value={totalPagado}
+            onChange={(e) =>
+              cambiarTotalPagado(
+                e.target.value === "" ? "" : Number(e.target.value) || 0
+              )
+            }
+            placeholder="Total $"
+            title="Lo que se pagó por esta línea: el peso se calcula con el precio por kilo"
+            className="h-8 w-full text-[13px]"
+          />
+          <span className="text-[10.5px] text-muted-foreground">
+            {linea.cantidad > 0 && montoDeLinea(linea.precio) > 0
+              ? `≈ ${linea.cantidad.toLocaleString("es-UY", { maximumFractionDigits: 3 })} ${linea.unidad}`
+              : `falta $ por ${linea.unidad}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => setTotalPagado(null)}
+            className="self-start text-[10.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+          >
+            poner el peso
+          </button>
+        </>
+      )}
+      {!esServicio && !calculaPeso && (
         <>
           <label
             htmlFor={`cantidad-${linea.key}`}
@@ -297,6 +381,16 @@ export function LineaGastoFila({
             }
             className="h-8 w-full text-[13px]"
           />
+          {linea.unidad !== "un" && !sinPeso && !linea.bloqueada && (
+            <button
+              type="button"
+              onClick={pasarACalcularPeso}
+              title="Para cuando el ticket no trae el peso pero sabés el precio por kilo: ponés lo que pagaste y el peso se calcula"
+              className="self-start text-[10.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+            >
+              calcular desde el total
+            </button>
+          )}
         </>
       )}
       </div>
@@ -319,17 +413,37 @@ export function LineaGastoFila({
         value={linea.precio}
         disabled={linea.bloqueada}
         onChange={(e) =>
-          actualizarLinea(linea.key, {
-            precio:
-              e.target.value === "" ? "" : Number(e.target.value) || 0,
-          })
+          cambiarPrecio(
+            e.target.value === "" ? "" : Number(e.target.value) || 0
+          )
         }
         placeholder={
           sinPeso || linea.unidad === "un" ? "$" : `$ por ${linea.unidad}`
         }
         className="h-8 w-full text-[13px]"
       />
-      {!sinPeso && linea.unidad !== "un" && montoDeLinea(linea.precio) > 0 && (
+      {calculaPeso &&
+        montoDeLinea(linea.precio) <= 0 &&
+        referencia !== undefined && (
+          <button
+            type="button"
+            onClick={() => cambiarPrecio(Number(referencia.toFixed(2)))}
+            className="self-start text-[10.5px] text-primary hover:underline"
+          >
+            usar {formatearMonto(Number(referencia.toFixed(2)))} (ref.)
+          </button>
+        )}
+      {sinPeso && !linea.bloqueada && (
+        <button
+          type="button"
+          onClick={pasarACalcularPeso}
+          title="Con el precio por kilo el peso se calcula, y la compra vuelve a contar para la comparación de precios"
+          className="self-start text-[10.5px] text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+        >
+          ¿sabés el $ por {linea.unidad}?
+        </button>
+      )}
+      {!sinPeso && !calculaPeso && linea.unidad !== "un" && montoDeLinea(linea.precio) > 0 && (
         <span className="text-[10.5px] text-muted-foreground">
           ={" "}
           {formatearMonto(
@@ -355,7 +469,8 @@ export function LineaGastoFila({
             aria-pressed={sinPeso}
             disabled={linea.bloqueada}
             title="El ticket no dice cuánto pesaba: se registra el gasto pero queda fuera de la comparación de precios"
-            onClick={() =>
+            onClick={() => {
+              setTotalPagado(null);
               actualizarLinea(linea.key, {
                 esPesoDesconocido: !sinPeso,
                 cantidad: 1,
@@ -366,8 +481,8 @@ export function LineaGastoFila({
                       sobreprecioManual: true,
                       esPrecioBase: false,
                     }),
-              })
-            }
+              });
+            }}
           >
             <BadgeLinea
               tipo="pesoDesconocido"
@@ -404,7 +519,6 @@ export function LineaGastoFila({
           linea.item.nombre !== ITEM_PAGO_TARJETA &&
           linea.item.id > 0 &&
           (() => {
-            const referencia = referenciaDeLinea(linea);
             const sugerida = ofertaSugeridaDeLinea(linea);
             const ofreceOferta =
               linea.esOferta ||

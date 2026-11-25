@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useEffect, useState, useTransition } from "react";
 import { AlertTriangle, ImageUp, MessageCircle, RotateCw, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -92,7 +93,7 @@ export function RegistroRecepcion({ inicial }: { inicial: Registro }) {
     setMensaje(null);
     startLimpiar(async () => {
       try {
-        const borradas = await vaciarRegistroRecepcion();
+        const borradas = desenvolver(await vaciarRegistroRecepcion());
         limpiarFiltros();
         setBuscado(null);
         setMensaje(

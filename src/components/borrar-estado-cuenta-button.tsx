@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
@@ -28,7 +29,7 @@ export function BorrarEstadoCuentaButton({ id }: { id: number }) {
         titulo="¿Quitar este estado de cuenta?"
         descripcion="Se borra el PDF guardado y el detalle de sus líneas. Los gastos que se importaron desde él no se tocan."
         onConfirmar={async () => {
-          await borrarEstadoCuenta(id);
+          desenvolver(await borrarEstadoCuenta(id));
           router.push("/estado-cuenta");
         }}
       />

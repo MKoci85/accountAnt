@@ -1,5 +1,7 @@
 "use server";
 
+import { desenvolver } from "@/lib/resultado";
+import { accion } from "@/lib/acciones-server";
 import { revalidatePath } from "next/cache";
 import { esFechaISOValida } from "@/lib/formato";
 import {
@@ -151,7 +153,7 @@ async function completarRespaldos(
   }
 
   if (lista.length < cantidad) {
-    const catalogo = await actualizarModelosProveedor(proveedor);
+    const catalogo = desenvolver(await actualizarModelosProveedor(proveedor));
     const modelos = catalogo.ok
       ? catalogo.modelos
       : ((await leerCatalogoModelos(proveedor))?.modelos ?? []);
@@ -176,7 +178,7 @@ async function completarRespaldos(
   }
 
   if (agregados.length > 0) {
-    await guardarModelosRespaldoIA(proveedor, lista.join(", "));
+    desenvolver(await guardarModelosRespaldoIA(proveedor, lista.join(", ")));
   }
 
   const partes = [
@@ -197,16 +199,16 @@ async function completarRespaldos(
  * @param modelo Modelo nuevo; vacío vuelve al default del código.
  * @returns Los respaldos que quedaron y, si la lista cambió, qué pasó con ella.
  */
-export async function cambiarModeloIA(
+export const cambiarModeloIA = accion(async (
   proveedor: ProveedorIA,
   modelo: string,
-): Promise<ResultadoRespaldos> {
+): Promise<ResultadoRespaldos> => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
   const anterior = await leerModeloIA(proveedor);
   const antes = await leerRespaldosSinRecortar(proveedor);
-  await guardarModeloIA(proveedor, modelo);
+  desenvolver(await guardarModeloIA(proveedor, modelo));
   const principal = await leerModeloIA(proveedor);
 
   const lugar = antes.indexOf(principal);
@@ -214,7 +216,7 @@ export async function cambiarModeloIA(
     modelo: anterior,
     lugar: lugar === -1 ? antes.length : lugar,
   });
-}
+});
 
 /**
  * Guarda cuántos modelos de respaldo quiere el usuario para un proveedor y
@@ -223,10 +225,10 @@ export async function cambiarModeloIA(
  * @param cantidad Cantidad de respaldos; `null` vuelve al default del código.
  * @returns Los respaldos que quedaron y, si hubo que probar modelos, qué pasó.
  */
-export async function guardarCantidadRespaldosIA(
+export const guardarCantidadRespaldosIA = accion(async (
   proveedor: ProveedorIA,
   cantidad: number | null,
-): Promise<ResultadoRespaldos> {
+): Promise<ResultadoRespaldos> => {
   if (!esProveedorValido(proveedor)) {
     throw new Error("Proveedor de IA desconocido");
   }
@@ -243,7 +245,7 @@ export async function guardarCantidadRespaldosIA(
   await escribirCantidadRespaldos(proveedor, cantidad);
   revalidatePath("/ajustes");
   return completarRespaldos(proveedor);
-}
+});
 
 export type FuenteIA =
   | { tipo: "texto"; texto: string }

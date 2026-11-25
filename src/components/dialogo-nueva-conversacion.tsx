@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import {
   Dialog,
@@ -79,10 +80,10 @@ export function DialogoNuevaConversacion({
             disabled={isPending || sinProveedores}
             onClick={() =>
               enviar(async () => {
-                const id = await crearConversacion({
+                const id = desenvolver(await crearConversacion({
                   proveedor: eleccion.proveedor,
                   modelo: eleccion.modelo,
-                });
+                }));
                 onOpenChange(false);
                 onCreada(id);
               })

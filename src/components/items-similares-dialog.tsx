@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -107,11 +108,11 @@ function GrupoSimilares({
 
   function combinar() {
     enviar(async () => {
-      const resultado = await combinarItemsCatalogo({
+      const resultado = desenvolver(await combinarItemsCatalogo({
         conservarId,
         absorberIds: absorbidos.map((i) => i.id),
         ...campos,
-      });
+      }));
       onCombinado(
         resultado.item,
         absorbidos.map((i) => i.id),
@@ -122,7 +123,7 @@ function GrupoSimilares({
 
   function descartar() {
     enviar(async () => {
-      await descartarItemsSimilares(seleccionados);
+      desenvolver(await descartarItemsSimilares(seleccionados));
       onDescartado(seleccionados);
     });
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -45,7 +46,7 @@ export function CompraEnCuotasCard({
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   async function guardarPlan(datos: { total: number; cantidad: number; interesPct: number }) {
-    const { vinculadas } = await marcarCompraEnCuotas(gastoId, datos);
+    const { vinculadas } = desenvolver(await marcarCompraEnCuotas(gastoId, datos));
     setEditando(false);
     setMensaje(
       vinculadas
@@ -192,7 +193,7 @@ export function CompraEnCuotasCard({
             : "La compra vuelve a sumar entera en su fecha."
         }
         onConfirmar={async () => {
-          await quitarCompraEnCuotas(gastoId);
+          desenvolver(await quitarCompraEnCuotas(gastoId));
           router.refresh();
         }}
       />
@@ -244,7 +245,7 @@ function PagarCuotaDialog({
       onGuardar={() =>
         enviar(async () => {
           if (!valido) return;
-          const r = await pagarCuota(cuota.id, { importe: monto, fecha });
+          const r = desenvolver(await pagarCuota(cuota.id, { importe: monto, fecha }));
           onPagada(
             r.interesAjustado !== null
               ? `Cuota registrada. El importe no coincidía con el calculado: las que faltan se recalcularon con un recargo de ${r.interesAjustado}%.`

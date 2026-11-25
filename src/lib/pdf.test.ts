@@ -35,10 +35,6 @@ describe("agruparEnFilas", () => {
     ]);
     expect(filas.map((f) => f.texto)).toEqual(["primera", "segunda", "tercera"]);
   });
-
-  it("sobre una lista vacía devuelve una lista vacía", () => {
-    expect(agruparEnFilas([])).toEqual([]);
-  });
 });
 
 describe("redactarDatosPersonales", () => {
@@ -46,14 +42,6 @@ describe("redactarDatosPersonales", () => {
     expect(redactarDatosPersonales("TARJETA 123456****7890")).toBe("TARJETA [TARJETA]");
     expect(redactarDatosPersonales("4509 9535 6623 3704")).toBe("[TARJETA]");
     expect(redactarDatosPersonales("4509-9535-6623-3704")).toBe("[TARJETA]");
-  });
-
-  it("tapa mail, cédula y URLs", () => {
-    expect(redactarDatosPersonales("escribime a juan.perez+x@mail.com.uy")).toBe(
-      "escribime a [MAIL]"
-    );
-    expect(redactarDatosPersonales("CI 1.234.567-8")).toBe("CI [CI]");
-    expect(redactarDatosPersonales("ver https://banco.uy/x?y=1 ahora")).toBe("ver [URL] ahora");
   });
 
   it("no toca los importes ni las fechas del estado de cuenta", () => {

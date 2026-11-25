@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -144,6 +145,7 @@ export function GastosView({
   const [seleccionados, setSeleccionados] = useState<number[]>([]);
   const [combinando, startCombinar] = useTransition();
   const [errorCombinar, setErrorCombinar] = useState<string | null>(null);
+  const [errorRevisados, setErrorRevisados] = useState<string | null>(null);
   const [soloSinRevisar, setSoloSinRevisar] = useState(
     () => params.get("automaticos") !== null
   );
@@ -212,7 +214,7 @@ export function GastosView({
     setErrorCombinar(null);
     startCombinar(async () => {
       try {
-        await combinarGastos(seleccionados);
+        desenvolver(await combinarGastos(seleccionados));
         setSeleccionados([]);
         setModoCombinar(false);
         router.refresh();
@@ -310,6 +312,9 @@ export function GastosView({
               gastos; revisalos por si alguno era hormiga. Editar y guardar uno
               lo da por revisado.
             </p>
+            {errorRevisados && (
+              <p className="mt-1 text-[12.5px] text-destructive">{errorRevisados}</p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -328,7 +333,13 @@ export function GastosView({
               disabled={marcandoRevisados}
               onClick={() =>
                 startMarcarRevisados(async () => {
-                  await marcarGastosRevisados();
+                  setErrorRevisados(null);
+                  try {
+                    desenvolver(await marcarGastosRevisados());
+                  } catch (e) {
+                    setErrorRevisados(e instanceof Error ? e.message : "No se pudieron marcar como revisados");
+                    return;
+                  }
                   setSoloSinRevisar(false);
                   router.refresh();
                 })

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState, useTransition } from "react";
 import {
   Sparkles,
@@ -76,7 +77,7 @@ export function ConfiguracionIaDialog({
     setMensajeGlobal(null);
     startCambioActivo(async () => {
       try {
-        await guardarProveedorActivoIA(proveedor);
+        desenvolver(await guardarProveedorActivoIA(proveedor));
         setMensajeGlobal({
           ok: true,
           texto: `Proveedor activo: ${configDe(proveedor).nombre}.`,
@@ -97,7 +98,7 @@ export function ConfiguracionIaDialog({
     setMensajeGlobal(null);
     startLimitador(async () => {
       try {
-        await guardarLimitadorIA(activo);
+        desenvolver(await guardarLimitadorIA(activo));
       } catch (e) {
         setLimitador(previo);
         setMensajeGlobal({
@@ -242,12 +243,16 @@ function FilaProveedor({
   function handleActualizarModelos() {
     setMensaje(null);
     startActualizacion(async () => {
-      const r = await actualizarModelosProveedor(estado.proveedor);
-      if (r.ok) {
-        setModelosSugeridos(r.modelos);
-        setActualizadoEn(new Date().toISOString());
+      try {
+        const r = desenvolver(await actualizarModelosProveedor(estado.proveedor));
+        if (r.ok) {
+          setModelosSugeridos(r.modelos);
+          setActualizadoEn(new Date().toISOString());
+        }
+        setMensaje({ ok: r.ok, texto: r.mensaje });
+      } catch (e) {
+        setMensaje({ ok: false, texto: e instanceof Error ? e.message : "No se pudo actualizar la lista de modelos" });
       }
-      setMensaje({ ok: r.ok, texto: r.mensaje });
     });
   }
 
@@ -256,7 +261,7 @@ function FilaProveedor({
     startGuardado(async () => {
       try {
         const key = apiKey.trim();
-        if (key) await guardarApiKeyIA(estado.proveedor, key);
+        if (key) desenvolver(await guardarApiKeyIA(estado.proveedor, key));
         const mostrarRespaldos = (texto: string) => {
           setRespaldos(texto);
           setRespaldosGuardados(texto);
@@ -269,16 +274,16 @@ function FilaProveedor({
         let avisoRespaldo: string | null = null;
         if (respaldos.trim() !== respaldosGuardados) {
           if (modelo.trim() !== estado.modelo) {
-            await guardarModeloIA(estado.proveedor, modelo);
+            desenvolver(await guardarModeloIA(estado.proveedor, modelo));
           }
           const respaldosLimpios = respaldosSinPrincipal(
             modeloEfectivo,
             parsearModelosRespaldo(respaldos),
           );
-          await guardarModelosRespaldoIA(
+          desenvolver(await guardarModelosRespaldoIA(
             estado.proveedor,
             respaldosLimpios.join(", "),
-          );
+          ));
           mostrarRespaldos(
             respaldos.trim() ? respaldosLimpios.join(", ") : respaldosPorDefecto,
           );
@@ -293,35 +298,35 @@ function FilaProveedor({
             );
           }
         } else if (modelo.trim() !== estado.modelo) {
-          const r = await cambiarModeloIA(estado.proveedor, modelo);
+          const r = desenvolver(await cambiarModeloIA(estado.proveedor, modelo));
           avisoRespaldo = r.aviso;
           mostrarRespaldos(r.respaldos.join(", "));
         }
         if (cantidadNueva !== null) {
-          const r = await guardarCantidadRespaldosIA(
+          const r = desenvolver(await guardarCantidadRespaldosIA(
             estado.proveedor,
             cantidad.trim() || cantidadNueva !== cantidadEscrita
               ? cantidadNueva
               : null,
-          );
+          ));
           avisoRespaldo = [avisoRespaldo, r.aviso].filter(Boolean).join(" ");
           mostrarRespaldos(r.respaldos.join(", "));
           setCantidad(String(cantidadNueva));
           setCantidadGuardada(cantidadNueva);
         }
         if (url.trim() !== (estado.url || estado.urlPorDefecto)) {
-          await guardarUrlProveedorIA(estado.proveedor, url);
+          desenvolver(await guardarUrlProveedorIA(estado.proveedor, url));
           if (!url.trim()) setUrl(estado.urlPorDefecto);
         }
         if (numeroOVacio(tpm) !== estado.tpm) {
-          await guardarTpmIA(
+          desenvolver(await guardarTpmIA(
             estado.proveedor,
             modelo.trim() || estado.modeloPorDefecto,
             numeroOVacio(tpm),
-          );
+          ));
         }
         if (numeroOVacio(rpd) !== estado.rpd) {
-          await guardarRpdIA(estado.proveedor, numeroOVacio(rpd));
+          desenvolver(await guardarRpdIA(estado.proveedor, numeroOVacio(rpd)));
         }
         setApiKey("");
         setMensaje({
@@ -357,7 +362,7 @@ function FilaProveedor({
     setMensaje(null);
     startGuardado(async () => {
       try {
-        await borrarApiKeyIA(estado.proveedor);
+        desenvolver(await borrarApiKeyIA(estado.proveedor));
         setApiKey("");
         setMensaje({ ok: true, texto: "API key borrada." });
       } catch (e) {

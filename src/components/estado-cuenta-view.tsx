@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
@@ -210,7 +211,13 @@ export function EstadoCuentaView({
   function handleDescartarBorrador() {
     if (!window.confirm("¿Descartar el estado de cuenta en borrador?")) return;
     startRetomar(async () => {
-      await descartarBorradorEstadoCuenta();
+      setError(null);
+      try {
+        desenvolver(await descartarBorradorEstadoCuenta());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudo descartar el borrador");
+        return;
+      }
       setBorrador(null);
       setConflictos([]);
       setAnalisis(null);
@@ -361,13 +368,13 @@ export function EstadoCuentaView({
         }));
         const estadoCuentaId = analisis?.estadoCuentaId ?? null;
         const elegidas = new Set(seleccion.map((l) => l.indice));
-        const r = await importarMovimientos(
+        const r = desenvolver(await importarMovimientos(
           seleccion,
           estadoCuentaId ?? undefined,
           Object.entries(asignaciones)
             .filter(([, indice]) => elegidas.has(indice))
             .map(([cuotaId, indice]) => ({ indice, cuotaId: Number(cuotaId) })),
-        );
+        ));
         setBorrador(null);
         if (!r.gastoIds.length) {
           const cuotas =

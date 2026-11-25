@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -73,16 +74,16 @@ export function NuevaCategoriaDialog({
     enviar(async () => {
       if (categoriaExistente) {
         onEditada?.(
-          await editarCategoria(categoriaExistente.id, {
+          desenvolver(await editarCategoria(categoriaExistente.id, {
             nombre,
             color,
             descripcion,
             esServicio,
-          })
+          }))
         );
       } else {
         onCreada(
-          await crearCategoria({ nombre, color, descripcion, esServicio })
+          desenvolver(await crearCategoria({ nombre, color, descripcion, esServicio }))
         );
       }
       onOpenChange(false);

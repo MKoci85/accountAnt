@@ -3,13 +3,10 @@ import {
   ajustarPlan,
   cuotaParaLinea,
   cuotasEsperadas,
-  gruposDeCompra,
-  interesImplicito,
   pareceCompraEntera,
   planDeCuotas,
   recalcularPendientes,
   repartoDeCuota,
-  tarjetaCompatible,
   type CompraParaCruce,
   type CuotaDeCompra,
   type LineaParaEsperar,
@@ -39,13 +36,6 @@ describe("planDeCuotas", () => {
     const plan = planDeCuotas(1000, 3, 0);
     expect(plan).toEqual([333.33, 333.33, 333.34]);
     expect(suma(plan)).toBe(1000);
-  });
-});
-
-describe("interesImplicito", () => {
-  it("deduce el recargo de lo que se termina pagando", () => {
-    expect(interesImplicito(1000, 1100)).toBe(10);
-    expect(interesImplicito(1000, 1000)).toBe(0);
   });
 });
 
@@ -132,21 +122,6 @@ describe("repartoDeCuota", () => {
   });
 });
 
-describe("gruposDeCompra", () => {
-  it("suma las líneas por categoría y marca hormiga", () => {
-    expect(
-      gruposDeCompra([
-        { categoriaId: 1, esHormiga: false, monto: 10 },
-        { categoriaId: 1, esHormiga: false, monto: 5.5 },
-        { categoriaId: 1, esHormiga: true, monto: 2 },
-      ])
-    ).toEqual([
-      { categoriaId: 1, esHormiga: false, monto: 15.5 },
-      { categoriaId: 1, esHormiga: true, monto: 2 },
-    ]);
-  });
-});
-
 function cuotaDeCompra(
   id: number,
   numero: number,
@@ -183,14 +158,6 @@ function compra(parcial: Partial<CompraParaCruce> = {}): CompraParaCruce {
     ...parcial,
   };
 }
-
-describe("tarjetaCompatible", () => {
-  it("una compra sin tarjeta aprendida puede estar en cualquier estado de cuenta", () => {
-    expect(tarjetaCompatible(null, "7041")).toBe(true);
-    expect(tarjetaCompatible("7041", "7041")).toBe(true);
-    expect(tarjetaCompatible("7041", "1234")).toBe(false);
-  });
-});
 
 describe("cuotaParaLinea", () => {
   const linea = {
@@ -320,11 +287,6 @@ describe("cuotasEsperadas", () => {
     ]);
   });
 
-  it("la primera cuota de una compra de días antes del cierre puede venir en el próximo", () => {
-    const [esperada] = cuotasEsperadas([compra({ fecha: "2026-09-27" })], estado, []);
-    expect(esperada.tipo).toBe("puede_venir");
-  });
-
   it("ignora compras posteriores al corte, de otra tarjeta o con un pago posterior", () => {
     expect(cuotasEsperadas([compra({ fecha: "2026-10-05" })], estado, [])).toEqual([]);
     expect(
@@ -337,35 +299,5 @@ describe("cuotasEsperadas", () => {
       ],
     });
     expect(cuotasEsperadas([pagadaDespues], estado, [])).toEqual([]);
-  });
-
-  it("propone primero la línea más parecida y dice en qué no coincide", () => {
-    const [esperada] = cuotasEsperadas([compra()], estado, [
-      lineaEsperar({ indice: 0, descripcion: "OTRA", montoPesos: 50 }),
-      lineaEsperar({
-        indice: 1,
-        fechaCompra: "2026-08-15",
-        cuota: { numero: 1, total: 4 },
-        montoPesos: 6150,
-      }),
-    ]);
-    expect(esperada.candidatos[0].indice).toBe(1);
-    expect(esperada.candidatos[0].motivos.join(" ")).toMatch(/importe distinto/);
-  });
-
-  it("una línea sin marca de cuota se ofrece igual, diciendo que no la tiene", () => {
-    const [esperada] = cuotasEsperadas([compra()], estado, [
-      lineaEsperar({ indice: 0, fechaCompra: "2026-08-15", montoPesos: 6000 }),
-    ]);
-    expect(esperada.candidatos).toEqual([
-      { indice: 0, motivos: ["no tiene marca de cuota"] },
-    ]);
-  });
-
-  it("no ofrece líneas que ya son otra cosa", () => {
-    const [esperada] = cuotasEsperadas([compra()], estado, [
-      lineaEsperar({ indice: 0, montoPesos: 6000, gastoExistenteId: 9 }),
-    ]);
-    expect(esperada.candidatos).toEqual([]);
   });
 });

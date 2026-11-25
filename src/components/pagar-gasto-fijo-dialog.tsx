@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -60,7 +61,7 @@ export function PagarGastoFijoDialog({
   function handleGuardar() {
     enviar(async () => {
       if (!montoValido) return;
-      await pagarGastoFijo(plantilla.id, { importe: monto, fecha });
+      desenvolver(await pagarGastoFijo(plantilla.id, { importe: monto, fecha }));
       onPagado(`${plantilla.nombre}: pago de ${formatearMonto(monto)} guardado`);
       onOpenChange(false);
     });

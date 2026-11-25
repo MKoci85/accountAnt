@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { asc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -117,10 +118,10 @@ export async function reintentarEntrante(id: number) {
   return resultado;
 }
 
-export async function descartarEntrante(id: number) {
+export const descartarEntrante = accion(async (id: number) => {
   await borrarEntrante(id);
   revalidarBandeja();
-}
+});
 
 export type EntranteParaRevision = {
   id: number;
@@ -209,8 +210,8 @@ export async function buscarRegistroRecepcion(filtros: FiltrosRegistro) {
   return listarRegistroRecepcion(filtros);
 }
 
-export async function vaciarRegistroRecepcion() {
+export const vaciarRegistroRecepcion = accion(async () => {
   const borradas = limpiarRegistroRecepcion();
   revalidatePath("/bandeja");
   return borradas;
-}
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { desenvolver } from "@/lib/resultado";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -92,10 +93,10 @@ export function NuevoItemDialog({
         categoriaId,
       };
       if (modoEdicion && itemExistenteId != null) {
-        const item = await editarItemCatalogo(itemExistenteId, datos);
+        const item = desenvolver(await editarItemCatalogo(itemExistenteId, datos));
         onEditado?.({ ...item, categoriaNombre: categoria?.nombre ?? "" });
       } else {
-        const item = await crearItemCatalogo(datos);
+        const item = desenvolver(await crearItemCatalogo(datos));
         onCreado({ ...item, categoriaNombre: categoria?.nombre ?? "" });
       }
       onOpenChange(false);

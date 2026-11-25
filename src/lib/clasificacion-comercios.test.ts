@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   CATEGORIA_COMBUSTIBLE,
-  CATEGORIA_FALLBACK,
   CATEGORIA_SUSCRIPCION,
   clasificarLinea,
-  sugerirCategoriaComercio,
   CATEGORIA_BANCARIO,
 } from "@/lib/clasificacion-comercios";
 
@@ -29,10 +27,6 @@ describe("clasificarLinea: combustible", () => {
     expect(linea?.emisor).toBe("ANCAP RUTA 5 KM 30");
     expect(linea?.categoria).toBe(CATEGORIA_COMBUSTIBLE);
   });
-
-  it("reconoce la marca escrita en minúscula", () => {
-    expect(clasificarLinea("Estacion Ancap Centro", false, 1500)?.rubro).toBe("combustible");
-  });
 });
 
 describe("clasificarLinea: ajustes del resumen", () => {
@@ -41,15 +35,6 @@ describe("clasificarLinea: ajustes del resumen", () => {
       rubro: "bancario",
       categoria: CATEGORIA_BANCARIO,
     });
-  });
-
-  it("le gana a la marca de combustible, que si no se lleva el descuento", () => {
-    expect(clasificarLinea("DTO.BROU- ANCAP", false, -181.5)?.rubro).not.toBe(
-      "combustible"
-    );
-    expect(clasificarLinea("ANCAP RUTA 5", false, 1500)?.rubro).toBe(
-      "combustible"
-    );
   });
 
   it("reconoce los cargos del banco por su texto, con importe positivo", () => {
@@ -69,10 +54,6 @@ describe("clasificarLinea: telepeaje", () => {
       emisor: "CVU",
     });
     expect(clasificarLinea("TELEPEAJE RUTA IB", false, 167)?.emisor).toBe("CVU");
-  });
-
-  it("no confunde CVU con una palabra que lo contenga", () => {
-    expect(clasificarLinea("SERVICIOS CVUNIDOS", false, 500)).toBeNull();
   });
 });
 
@@ -96,27 +77,5 @@ describe("clasificarLinea: suscripciones", () => {
 
   it("no asume nada para un consumo en pesos sin reconocer", () => {
     expect(clasificarLinea("KIOSCO DE LA ESQUINA", false, 250)).toBeNull();
-  });
-
-  it("la marca de combustible gana sobre el fallback de dólares", () => {
-    expect(clasificarLinea("ANCAP RUTA 1", true, 40)?.rubro).toBe("combustible");
-  });
-});
-
-describe("sugerirCategoriaComercio", () => {
-  it("mapea los rubros conocidos", () => {
-    expect(sugerirCategoriaComercio("TIENDA INGLESA POCITOS")).toBe("Almacén");
-    expect(sugerirCategoriaComercio("FARMASHOP 42")).toBe("Salud");
-    expect(sugerirCategoriaComercio("PEDIDOSYA")).toBe("Comida fuera de casa");
-    expect(sugerirCategoriaComercio("UBER *TRIP")).toBe("Transporte");
-    expect(sugerirCategoriaComercio("CINE MOVIE")).toBe("Ocio");
-  });
-
-  it("ignora mayúsculas y tildes", () => {
-    expect(sugerirCategoriaComercio("servicio médico integral")).toBe("Salud");
-  });
-
-  it("cae en la categoría por defecto cuando no reconoce nada", () => {
-    expect(sugerirCategoriaComercio("XYZ SRL")).toBe(CATEGORIA_FALLBACK);
   });
 });

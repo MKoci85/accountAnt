@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { db } from "@/db";
 import {
   gastos,
@@ -245,7 +246,7 @@ export async function guardarGasto(
   }
 }
 
-export async function crearGasto(datos: NuevoGastoDatos) {
+export const crearGasto = accion(async (datos: NuevoGastoDatos) => {
   // El bloqueo por mes es de la carga manual: resolver un entrante es justo lo
   // que lo destraba, y pagar un gasto fijo va por `guardarGasto` y no pasa por acá.
   if (!datos.entranteId && (await resumenDeBandeja()).bloqueada) {
@@ -260,9 +261,9 @@ export async function crearGasto(datos: NuevoGastoDatos) {
   revalidatePath("/gastos");
   revalidatePath("/");
   redirect("/gastos");
-}
+});
 
-export async function editarGasto(
+export const editarGasto = accion(async (
   id: number,
   datos: {
     emisorId: number;
@@ -270,7 +271,7 @@ export async function editarGasto(
     items: NuevoGastoItem[];
     redirigirA?: string;
   }
-) {
+) => {
   if (!datos.items.length) {
     throw new Error("El gasto necesita al menos un ítem");
   }
@@ -297,31 +298,31 @@ export async function editarGasto(
       ? datos.redirigirA
       : `/gastos/${id}`;
   redirect(destino);
-}
+});
 
 /**
  * Da por revisados todos los gastos que se guardaron solos. No cambia nada del
  * gasto: sólo apaga el aviso.
  */
-export async function marcarGastosRevisados() {
+export const marcarGastosRevisados = accion(async () => {
   db.update(gastos).set({ sinRevisar: false }).where(eq(gastos.sinRevisar, true)).run();
   revalidatePath("/gastos");
   revalidatePath("/");
-}
+});
 
-export async function borrarGasto(id: number) {
+export const borrarGasto = accion(async (id: number) => {
   db.delete(gastos).where(eq(gastos.id, id)).run();
 
   revalidatePath("/gastos");
   revalidatePath("/");
-}
+});
 
 /**
  * Combina dos o más gastos del mismo comercio y misma fecha en uno solo: sus
  * líneas pasan todas al gasto más antiguo (menor id) y los demás se borran.
  * @param idsGastos Ids de los gastos a combinar.
  */
-export async function combinarGastos(idsGastos: number[]) {
+export const combinarGastos = accion(async (idsGastos: number[]) => {
   const idsUnicos = Array.from(new Set(idsGastos));
   if (idsUnicos.length < 2) {
     throw new Error("Elegí al menos dos gastos para combinar");
@@ -404,7 +405,7 @@ export async function combinarGastos(idsGastos: number[]) {
 
   revalidatePath("/gastos");
   revalidatePath("/");
-}
+});
 
 /**
  * @returns las claves (`clavePar`) de los pares de gastos que el usuario ya
@@ -425,7 +426,7 @@ export async function listarGastosCombinablesDescartados() {
  * comercio y fecha (dos idas al súper el mismo día), para que dejen de
  * ofrecerse como combinables entre sí.
  */
-export async function descartarGastosCombinables(ids: number[]) {
+export const descartarGastosCombinables = accion(async (ids: number[]) => {
   const pares = paresDe(ids);
   if (pares.length === 0) {
     throw new Error("Elegí al menos dos gastos");
@@ -436,7 +437,7 @@ export async function descartarGastosCombinables(ids: number[]) {
     .onConflictDoNothing();
   revalidatePath("/gastos");
   revalidatePath("/");
-}
+});
 
 export type GastoDetalle = {
   id: number;
@@ -890,10 +891,10 @@ export async function obtenerHistorialPrecios(
  * @returns Cuántas líneas dejaron de estar, o volvieron a estar, marcadas
  * como sobreprecio.
  */
-export async function marcarCompraComoOferta(
+export const marcarCompraComoOferta = accion(async (
   gastoItemId: number,
   esOferta: boolean
-): Promise<{ sobrepreciosLimpiados: number; sobrepreciosRestaurados: number }> {
+): Promise<{ sobrepreciosLimpiados: number; sobrepreciosRestaurados: number }> => {
   const [linea] = await db
     .select({
       itemCatalogoId: gastoItems.itemCatalogoId,
@@ -939,7 +940,7 @@ export async function marcarCompraComoOferta(
   revalidatePath("/reportes");
   revalidatePath("/catalogos");
   return { sobrepreciosLimpiados, sobrepreciosRestaurados };
-}
+});
 
 const columnasRecalculo = {
   id: gastoItems.id,

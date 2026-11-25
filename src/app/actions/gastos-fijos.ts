@@ -1,5 +1,6 @@
 "use server";
 
+import { accion } from "@/lib/acciones-server";
 import { db } from "@/db";
 import { categorias, emisores, gastoItems, gastos, gastosFijos } from "@/db/schema";
 import { asc, eq, isNotNull, sql } from "drizzle-orm";
@@ -135,13 +136,13 @@ function validarDatos(datos: {
   return nombre;
 }
 
-export async function crearGastoFijo(datos: {
+export const crearGastoFijo = accion(async (datos: {
   nombre: string;
   categoriaId: number;
   emisorId?: number | null;
   importe?: number | null;
   meses?: number[] | null;
-}) {
+}) => {
   const nombre = validarDatos(datos);
 
   const [plantilla] = await db
@@ -157,9 +158,9 @@ export async function crearGastoFijo(datos: {
 
   revalidarGastosFijos();
   return plantilla;
-}
+});
 
-export async function editarGastoFijo(
+export const editarGastoFijo = accion(async (
   id: number,
   datos: {
     nombre: string;
@@ -168,7 +169,7 @@ export async function editarGastoFijo(
     importe?: number | null;
     meses?: number[] | null;
   }
-) {
+) => {
   const nombre = validarDatos(datos);
 
   const [plantilla] = await db
@@ -185,31 +186,31 @@ export async function editarGastoFijo(
 
   revalidarGastosFijos();
   return plantilla;
-}
+});
 
-export async function cambiarActivoGastoFijo(id: number, activo: boolean) {
+export const cambiarActivoGastoFijo = accion(async (id: number, activo: boolean) => {
   await db.update(gastosFijos).set({ activo }).where(eq(gastosFijos.id, id));
   revalidarGastosFijos();
-}
+});
 
 /**
  * Borra la plantilla. Los gastos ya registrados sobreviven: la FK es
  * `on delete set null`, así que solo pierden la referencia.
  */
-export async function borrarGastoFijo(id: number) {
+export const borrarGastoFijo = accion(async (id: number) => {
   await db.delete(gastosFijos).where(eq(gastosFijos.id, id));
   revalidarGastosFijos();
-}
+});
 
 /**
  * Registra el pago del mes como un gasto normal, con una única línea de
  * servicio, y guarda el importe en la plantilla como referencia del próximo.
  * @returns El id del gasto creado.
  */
-export async function pagarGastoFijo(
+export const pagarGastoFijo = accion(async (
   id: number,
   datos: { importe: number; fecha: string }
-) {
+) => {
   if (!(datos.importe > 0)) {
     throw new Error("El importe tiene que ser mayor a cero");
   }
@@ -254,4 +255,4 @@ export async function pagarGastoFijo(
 
   revalidarGastosFijos();
   return gasto;
-}
+});
