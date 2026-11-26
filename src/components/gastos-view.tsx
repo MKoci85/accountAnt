@@ -151,8 +151,6 @@ export function GastosView({
   );
   const [marcandoRevisados, startMarcarRevisados] = useTransition();
   const cantidadSinRevisar = gastos.filter((g) => g.sinRevisar).length;
-  // Si ya no queda ninguno (se marcaron, o se editó el último), el filtro no
-  // tiene nada que mostrar y se ignora en vez de dejar la lista vacía.
   const filtraSinRevisar = soloSinRevisar && cantidadSinRevisar > 0;
   const [combinablesOpen, setCombinablesOpen] = useState(
     () => params.get("combinables") !== null
@@ -257,8 +255,6 @@ export function GastosView({
     const hoy = new Date();
 
     return gastos.filter((g) => {
-      // "Guardados solos" es una lista de pendientes, no un período: se
-      // muestran todos, sin importar los demás filtros.
       if (filtraSinRevisar) return g.sinRevisar;
       if (categoriaId !== "todas" && !g.categorias.some((c) => String(c.id) === categoriaId)) {
         return false;

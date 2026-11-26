@@ -14,7 +14,7 @@ export const gastos = sqliteTable(
   "gastos",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    fecha: text("fecha").notNull(), // ISO 8601 (YYYY-MM-DD)
+    fecha: text("fecha").notNull(),
     emisorId: integer("emisor_id")
       .notNull()
       .references(() => emisores.id),
@@ -25,15 +25,18 @@ export const gastos = sqliteTable(
 
     montoTotal: real("monto_total"),
 
-    creadoEn: text("creado_en"), // ISO 8601; null en gastos previos a la columna
+    /** Null en gastos previos a la columna. */
+    creadoEn: text("creado_en"),
 
     gastoFijoId: integer("gasto_fijo_id").references(() => gastosFijos.id, {
       onDelete: "set null",
     }),
 
-    // Se guardó solo desde un comprobante recibido y todavía nadie lo miró. Es
-    // un gasto como cualquier otro para reportes y precios: la marca sólo
-    // alimenta el aviso "guardados solos" hasta que se revisa.
+    /**
+     * Se guardó solo desde un comprobante recibido y todavía nadie lo miró. Es
+     * un gasto como cualquier otro para reportes y precios: la marca sólo
+     * alimenta el aviso "guardados solos" hasta que se revisa.
+     */
     sinRevisar: integer("sin_revisar", { mode: "boolean" })
       .notNull()
       .default(false),

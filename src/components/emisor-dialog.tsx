@@ -102,8 +102,6 @@ export function EmisorDialog({
         />
       </CampoFormulario>
 
-      {/* La URL de consulta ya no se pide acá: es del proveedor, no del
-          comercio. Se administra en la pestaña Proveedores de CFE. */}
       <CampoFormulario
         label="Proveedor de CFE (opcional)"
         htmlFor="emisor-proveedor"

@@ -15,6 +15,11 @@ import { leerAjuste } from "@/lib/config-server";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Con `?entrante=N` abre la revisión de un comprobante de la bandeja. Uno que
+ * ya se resolvió o se descartó manda de vuelta a la bandeja en vez de abrir un
+ * formulario vacío que parece el suyo.
+ */
 export default async function NuevoGastoPage({
   searchParams,
 }: {
@@ -30,8 +35,6 @@ export default async function NuevoGastoPage({
       : null,
     leerAjuste("umbralCompraEnCuotas"),
   ]);
-  // Un entrante que ya se resolvió o se descartó manda de vuelta a la bandeja
-  // en vez de abrir un formulario vacío que parece el suyo.
   if (entranteId && !entrante) redirect("/bandeja");
 
   return (

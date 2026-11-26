@@ -1,3 +1,9 @@
+/**
+ * Lectura de un comprobante recibido y decisión de adónde va: a la bandeja o
+ * directo a gasto. Sin "use server": recibe un Buffer, y todo lo que exporta un
+ * módulo "use server" queda invocable desde el navegador. Lo llaman las
+ * acciones de `actions/entrantes.ts` y el webhook.
+ */
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { categorias, emisores, gastos, gastosEntrantes } from "@/db/schema";
@@ -30,11 +36,6 @@ import {
 } from "@/app/actions/cfe";
 import { guardarGasto, obtenerHormigaHeredada } from "@/app/actions/gastos";
 import { interpretarLinkCfeConIA } from "@/app/actions/ia";
-
-// Lectura de un comprobante recibido y decisión de adónde va: a la bandeja o
-// directo a gasto. Sin "use server": recibe un Buffer, y todo lo que exporta
-// un módulo "use server" queda invocable desde el navegador. Lo llaman las
-// acciones de `actions/entrantes.ts` y el webhook.
 
 type Entrante = typeof gastosEntrantes.$inferSelect;
 type CanalEntrante = Entrante["canal"];
@@ -87,7 +88,10 @@ function unirAvisos(...avisos: (string | null | undefined)[]): string | null {
 /**
  * Resuelve un QR (o el link de DGI equivalente) con el mismo `consultarCFE` del
  * escáner. Un comprobante que DGI no confirma queda en error pero conserva el
- * texto: reintentar no tiene que volver a leer la foto.
+ * texto: reintentar no tiene que volver a leer la foto. Con aviso de moneda el
+ * total queda sin convertir, así que no se guarda como monto en pesos; sin
+ * detalle del proveedor queda el monto del propio QR, que es contra lo que se
+ * cotejan los ítems que se carguen a mano o lea la IA.
  */
 async function leerDesdeQR(
   qrTexto: string,
@@ -121,9 +125,6 @@ async function leerDesdeQR(
     emisorId: resultado.emisor.id,
     comercio: null,
     fecha: resultado.fechaISO,
-    // Con aviso de moneda el total quedó sin convertir: no es un monto en pesos.
-    // Sin detalle del proveedor queda el monto del propio QR, que es contra lo
-    // que se cotejan los ítems que se carguen a mano o lea la IA.
     total: resultado.avisoMoneda
       ? null
       : (resultado.total ?? montoDesdeQR(resultado.datosQR.monto)),
@@ -131,6 +132,9 @@ async function leerDesdeQR(
     aviso: unirAvisos(
       avisoPrevio,
       resultado.errorProveedor,
+      resultado.proveedorDetectado
+        ? `El comercio no tenía proveedor de CFE: el detalle lo trajo ${resultado.proveedorDetectado}, que quedó asignado. Revisá que corresponda al ticket.`
+        : null,
       resultado.avisoMoneda,
       lectura === "link"
         ? "El link se leyó de la foto con IA: revisá fecha y total contra el papel."
@@ -405,7 +409,8 @@ async function guardarSiNoHayNadaQueRevisar(
 /**
  * Recibe la foto de un comprobante y la lee. Si no deja nada por decidir y el
  * guardado automático está activo, se guarda como gasto; si no, queda en la
- * bandeja hasta que el usuario lo revise.
+ * bandeja hasta que el usuario lo revise. Si el guardado automático falla por
+ * lo que sea, el comprobante no se pierde: cae a la bandeja como cualquier otro.
  */
 export async function recibirImagen(
   imagen: Buffer,
@@ -441,8 +446,6 @@ async function recibirLeyendo(
     lectura.estado === "pendiente" &&
     (await leerAjustesBandeja()).guardadoAutomatico
   ) {
-    // Si el guardado falla por lo que sea, el comprobante no se pierde: cae a
-    // la bandeja como cualquier otro.
     const intento = await guardarSiNoHayNadaQueRevisar(lectura).catch(
       (e): { guardado: false; motivo: string } => {
         const motivo = e instanceof Error ? e.message : "No se pudo guardar solo.";

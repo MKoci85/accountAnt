@@ -1,9 +1,11 @@
 import sharp from "sharp";
 import jsQR from "jsqr";
 
-// De mayor a menor: a diferencia del navegador, acá no hay apuro, así que se
-// empieza por la foto casi entera — a 1600 px el QR de un ticket fotografiado
-// de lejos queda en 3 px por módulo y `jsqr` ya no lo lee.
+/**
+ * De mayor a menor: a diferencia del navegador, acá no hay apuro, así que se
+ * empieza por la foto casi entera — a 1600 px el QR de un ticket fotografiado
+ * de lejos queda en 3 px por módulo y `jsqr` ya no lo lee.
+ */
 const LADOS_QR = [3200, 1600, 800];
 const LADO_MAXIMO_IA = 1600;
 
@@ -14,12 +16,11 @@ const LADO_MAXIMO_IA = 1600;
  *
  * Prueba la imagen a varios tamaños porque no hay uno que sirva siempre: un QR
  * chico se pierde al reducir la foto, y uno que ocupa toda la imagen a veces
- * sólo se lee reducido.
+ * sólo se lee reducido. Antes se endereza según el EXIF: una foto vertical de
+ * celular viene acostada en los píxeles.
  * @returns El texto del QR, o null si no se encontró ninguno.
  */
 export async function buscarQREnImagen(imagen: Buffer): Promise<string | null> {
-  // rotate() sin argumentos aplica la orientación EXIF: una foto vertical de
-  // celular viene acostada en los píxeles.
   const base = sharp(imagen).rotate();
   const { width, height } = await base.metadata();
   if (!width || !height) return null;

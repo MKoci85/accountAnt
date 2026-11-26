@@ -208,6 +208,30 @@ export type DetalleComprobante = {
   moneda: string | null;
 };
 
+/**
+ * Si el detalle que contestó un proveedor probado a ciegas (sin estar mapeado
+ * al emisor) es de este comprobante. No todos dicen "no existe" igual:
+ * Scanntech contesta una página sin filas, y uCFE trae el total sin ítems si
+ * le falla el PDF. Con total legible tiene que coincidir con el monto del QR
+ * (±$1, los dos en la moneda del comprobante); sin ítems ni total no hay nada
+ * que diga que es éste, y asignarle ese proveedor al emisor sería inventarlo.
+ * @param detalle respuesta del proveedor, antes de convertir de moneda
+ * @param datos campos del QR
+ */
+export function detalleCorrespondeAlQR(
+  detalle: DetalleComprobante,
+  datos: DatosQR
+): boolean {
+  const montoQR = montoDesdeQR(datos.monto);
+  const total =
+    detalle.total !== null && Number.isFinite(detalle.total) ? detalle.total : null;
+  if (total !== null && montoQR !== null && Math.abs(total - montoQR) > 1) {
+    return false;
+  }
+  if (detalle.items.length > 0) return true;
+  return total !== null && montoQR !== null;
+}
+
 function parsearMontoUY(texto: string): number {
   const limpio = texto.trim().replace(/\./g, "").replace(",", ".");
   return Number(limpio);
@@ -525,6 +549,10 @@ function campoTaface(html: string, id: string): string | null {
   return texto ? texto : null;
 }
 
+/**
+ * La cabecera sale del HTML del resultado y los ítems de un PDF aparte: un PDF
+ * que no llega (o tarda de más) deja el comprobante sin ítems, no sin nada.
+ */
 async function consultarUcfe(
   urlBase: string,
   datos: DatosQR
@@ -594,8 +622,6 @@ async function consultarUcfe(
     }
     bufferPdf = await resPdf.arrayBuffer();
   } catch (e) {
-    // La cabecera ya se leyó del HTML: un PDF que no llega deja el comprobante
-    // sin ítems, no sin nada.
     if (esTimeout(e)) return sinItems;
     throw e;
   }

@@ -278,7 +278,6 @@ export function EstadoCuentaView({
         setAnalisis(null);
         return;
       }
-      // Un PDF nuevo sin choques reemplaza al borrador que hubiera.
       setBorrador(null);
       mostrarAnalisis(resultado);
     } catch (err) {

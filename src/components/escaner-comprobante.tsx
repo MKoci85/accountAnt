@@ -425,6 +425,17 @@ export function EscanerComprobante({
             )}
           </div>
 
+          {resultado.proveedorDetectado && (
+            <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2.5">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <p className="text-[12.5px] text-muted-foreground">
+                Este comercio no tenía proveedor de CFE: el detalle lo trajo{" "}
+                {resultado.proveedorDetectado}, y quedó asignado para los
+                próximos tickets. Revisá que los ítems sean los del ticket.
+              </p>
+            </div>
+          )}
+
           {resultado.avisoMoneda && (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3.5 py-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />

@@ -1,3 +1,8 @@
+/**
+ * Configuración y llamadas a la API de WhatsApp (Cloud API de Meta). Sin "use
+ * server": acá se leen el token y el secreto de la app completos, y todo lo que
+ * exporta un módulo "use server" es invocable desde el navegador.
+ */
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, like, or } from "drizzle-orm";
 import { db } from "@/db";
@@ -17,10 +22,6 @@ import {
   type ModoRespuesta,
 } from "@/lib/whatsapp";
 
-// Configuración y llamadas a la API de WhatsApp (Cloud API de Meta). Sin "use
-// server": acá se leen el token y el secreto de la app completos, y todo lo
-// que exporta un módulo "use server" es invocable desde el navegador.
-
 export const CLAVES_WHATSAPP = {
   activo: "whatsapp_activo",
   token: "whatsapp_token",
@@ -33,11 +34,13 @@ export const CLAVES_WHATSAPP = {
   timeoutMs: "whatsapp_timeout_ms",
 } as const;
 
-// Sin versión en la ruta: Meta usa la versión por defecto de la app, y una
-// versión fija acá vencería sola con el tiempo. Se puede fijar desde ajustes.
+/**
+ * Sin versión en la ruta: Meta usa la versión por defecto de la app, y una
+ * versión fija acá vencería sola con el tiempo. Se puede fijar desde ajustes.
+ */
 export const URL_BASE_WHATSAPP = "https://graph.facebook.com";
 export const TIMEOUT_WHATSAPP_MS = 30_000;
-// WhatsApp comprime las fotos muy por debajo de esto; es un tope de cordura.
+/** WhatsApp comprime las fotos muy por debajo de esto; es un tope de cordura. */
 const MAXIMO_IMAGEN_BYTES = 16 * 1024 * 1024;
 
 export type ConfigWhatsapp = {
@@ -52,12 +55,14 @@ export type ConfigWhatsapp = {
   timeoutMs: number;
 };
 
+/**
+ * El token de verificación se genera la primera vez y queda fijo: es lo que se
+ * pega en Meta, y cambiarlo solo rompería la suscripción.
+ */
 export async function leerConfigWhatsapp(): Promise<ConfigWhatsapp> {
   const leer = (clave: keyof typeof CLAVES_WHATSAPP) =>
     leerConfig(CLAVES_WHATSAPP[clave]);
 
-  // El token de verificación se genera la primera vez y queda fijo: es lo que
-  // se pega en Meta, y cambiarlo solo rompería la suscripción.
   let verifyToken = await leer("verifyToken");
   if (!verifyToken) {
     verifyToken = randomBytes(24).toString("hex");
@@ -103,9 +108,7 @@ async function llamarMeta(
     let detalle = cuerpo.slice(0, 200);
     try {
       detalle = JSON.parse(cuerpo)?.error?.message ?? detalle;
-    } catch {
-      // no era JSON: va el texto crudo
-    }
+    } catch {}
     throw new Error(`Meta respondió ${res.status}: ${detalle}`);
   }
   return res;
@@ -159,6 +162,10 @@ export async function probarConexionWhatsapp(): Promise<string> {
 const REENVIAR_FOTO =
   "Se cortó la lectura de una foto que mandaste y ya no la puedo recuperar: mandámela de nuevo.";
 
+/**
+ * En un reintento, que Meta ya no entregue el archivo es lo esperable: lo único
+ * que sirve decir es que hay que mandar la foto otra vez.
+ */
 async function desenlaceDe(
   config: ConfigWhatsapp,
   mensaje: MensajeEntrante,
@@ -185,8 +192,6 @@ async function desenlaceDe(
       "whatsapp",
       mensaje.id
     );
-    // En un reintento, que Meta ya no entregue el archivo es lo esperable: lo
-    // único que sirve decir es que hay que mandarla otra vez.
     return {
       tipo: "problema",
       motivo: esReintento
@@ -310,7 +315,10 @@ export function contarMensajesInterrumpidos(): number {
 }
 
 /**
- * Retoma los mensajes que quedaron a medio procesar por un reinicio.
+ * Retoma los mensajes que quedaron a medio procesar por un reinicio. Tomar uno
+ * es un update condicionado al resultado que se leyó: si otro pedido lo tomó
+ * entre medio, este no lo procesa de nuevo. Uno sin `mediaId` (no era una foto,
+ * o es anterior a que se guardara el id del archivo) se cierra sin reintentar.
  * @param incluirReintentados También los que ya se reintentaron y se volvieron
  *   a cortar. Sólo a pedido del usuario: solos se reintentan una única vez.
  * @returns Cuántos se retomaron.
@@ -326,8 +334,6 @@ export async function reintentarMensajesInterrumpidos({
     if (!interrupcion) continue;
     if (interrupcion === "reintento-interrumpido" && !incluirReintentados) continue;
 
-    // Tomarlo es un update condicionado al resultado que se leyó: si otro
-    // pedido lo tomó entre medio, este no lo procesa de nuevo.
     const tomado = db
       .update(mensajesWhatsapp)
       .set({ resultado: marcaDeReintento(new Date()) })
@@ -345,7 +351,6 @@ export async function reintentarMensajesInterrumpidos({
     retomados++;
 
     if (!fila.mediaId) {
-      // No era una foto, o es anterior a que se guardara el id del archivo.
       db.update(mensajesWhatsapp)
         .set({ resultado: "Interrumpido: no quedó una foto para reintentar" })
         .where(eq(mensajesWhatsapp.id, fila.id))

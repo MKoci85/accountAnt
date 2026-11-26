@@ -160,6 +160,7 @@ export async function obtenerAjustesBandeja(): Promise<AjustesBandeja> {
   return leerAjustesBandeja();
 }
 
+/** Revalida el layout entero: el aviso de bandeja depende del bloqueo y vive en todas las pantallas. */
 export const guardarAjusteBandeja = accion(async (
   ajuste: keyof AjustesBandeja,
   activo: boolean,
@@ -168,7 +169,6 @@ export const guardarAjusteBandeja = accion(async (
     throw new Error("Ajuste de bandeja desconocido");
   }
   await escribirAjusteBandeja(ajuste, activo);
-  // El aviso del layout depende del bloqueo, y vive en todas las pantallas.
   revalidatePath("/", "layout");
 });
 

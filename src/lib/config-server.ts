@@ -192,8 +192,11 @@ const CLAVES_BANDEJA: Record<keyof AjustesBandeja, string> = {
   itemsConIA: CLAVE_ITEMS_CON_IA,
 };
 
-// Los dos primeros arrancan activos: sólo un "0" guardado los apaga. El de la
-// IA es al revés — manda la foto a un tercero, así que hay que prenderlo.
+/**
+ * El bloqueo y el guardado automático arrancan activos: sólo un `"0"` guardado
+ * los apaga. Los ítems con IA son al revés — mandan la foto a un tercero, así
+ * que hay que prenderlos.
+ */
 export async function leerAjustesBandeja(): Promise<AjustesBandeja> {
   const [bloqueo, guardado, itemsConIA] = await Promise.all([
     leerConfig(CLAVE_BLOQUEO_POR_MES),

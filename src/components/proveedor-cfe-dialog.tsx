@@ -15,6 +15,7 @@ import {
 } from "@/app/actions/catalogos";
 import {
   PROCESADORES_CONOCIDOS,
+  buscarProcesador,
   type FormatoProveedorCfe,
 } from "@/lib/procesadores";
 import type { proveedoresCfe } from "@/db/schema";
@@ -40,6 +41,10 @@ export function ProveedorCfeDialog({
   const [formato, setFormato] = useState<FormatoProveedorCfe>(
     proveedorExistente?.formato ?? "otro"
   );
+  const [probarSinMapeo, setProbarSinMapeo] = useState(
+    proveedorExistente?.probarSinMapeo ?? false
+  );
+  const soportado = Boolean(buscarProcesador(formato)?.soportado);
   const { error, setError, isPending, enviar } = useEnvioDialog(
     "No se pudo guardar el proveedor"
   );
@@ -49,6 +54,7 @@ export function ProveedorCfeDialog({
       setNombre(proveedorExistente?.nombre ?? "");
       setUrlConsulta(proveedorExistente?.urlConsulta ?? "");
       setFormato(proveedorExistente?.formato ?? "otro");
+      setProbarSinMapeo(proveedorExistente?.probarSinMapeo ?? false);
       setError(null);
     }
     onOpenChange(next);
@@ -69,8 +75,14 @@ export function ProveedorCfeDialog({
             nombre,
             urlConsulta,
             formato,
+            probarSinMapeo: soportado && probarSinMapeo,
           }))
-        : desenvolver(await obtenerOCrearProveedorCfe({ nombre, urlConsulta, formato }));
+        : desenvolver(await obtenerOCrearProveedorCfe({
+            nombre,
+            urlConsulta,
+            formato,
+            probarSinMapeo: soportado && probarSinMapeo,
+          }));
       onGuardado(proveedor);
       onOpenChange(false);
     });
@@ -149,6 +161,26 @@ export function ProveedorCfeDialog({
           que usa la app al consultar un comprobante.
         </p>
       </CampoFormulario>
+
+      <label
+        className={`flex items-start gap-2 rounded-lg border border-border/60 px-3 py-2.5 text-[13px] ${soportado ? "cursor-pointer" : "opacity-60"}`}
+      >
+        <input
+          type="checkbox"
+          checked={soportado && probarSinMapeo}
+          disabled={!soportado}
+          onChange={(e) => setProbarSinMapeo(e.target.checked)}
+          className="mt-0.5 h-3.5 w-3.5 accent-primary"
+        />
+        <span>
+          Probar con comercios sin proveedor
+          <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
+            {soportado
+              ? "Cuando llega un ticket de un comercio que todavía no tiene proveedor de CFE, se busca también acá. Si lo encuentra, trae el detalle y el proveedor queda asignado al comercio."
+              : "Sólo para formatos con consulta automática: con éste no hay cómo saber si el comprobante es suyo."}
+          </span>
+        </span>
+      </label>
     </DialogFormulario>
   );
 }

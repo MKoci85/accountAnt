@@ -181,10 +181,7 @@ export function NuevoGastoForm({
       gastoInicial
         ? lineasDesdeGasto(gastoInicial, revision?.detalle)
         : entranteInicial
-          ? // Las keys van a ids del DOM, y `lineasDesdeTicket` las arma con
-            // la hora: este inicializador corre en el servidor y otra vez al
-            // hidratar, así que se pisan con unas que den igual las dos veces.
-            lineasDesdeTicket(entranteInicial.lineas).map((linea, i) => ({
+          ? lineasDesdeTicket(entranteInicial.lineas).map((linea, i) => ({
               ...linea,
               key: `entrante-${i}`,
             }))
@@ -375,10 +372,6 @@ export function NuevoGastoForm({
     setLineas((prev) =>
       prev.map((l) => {
         if (l.key !== key) return l;
-        // Escribir sobre el nombre de una línea ya vinculada la desvincula. El
-        // id provisorio se pide al contador y nunca es un literal: `-1` es el
-        // que le toca a la primera línea sin catalogar de un ticket, y dos
-        // líneas con el mismo id se confunden entre sí en `claveAgrupacion`.
         const desvinculada = l.item.id > 0;
         return {
           ...l,
@@ -387,8 +380,6 @@ export function NuevoGastoForm({
             id: desvinculada ? idItemProvisorio() : l.item.id,
             nombre,
             marca: null,
-            // El tamaño del ticket es la pista de qué era la línea ("· 1,5 LT"
-            // bajo el nombre), así que sobrevive al renombre.
             tamano: l.origenTicket?.tamano ?? null,
           },
         };
@@ -507,6 +498,12 @@ export function NuevoGastoForm({
     return true;
   }
 
+  /**
+   * Si ya había líneas, la captura se agrega: el encabezado del gasto es el de
+   * la primera, sólo se completa lo que todavía falta, y el total a cotejar es
+   * la suma de los comprobantes — si alguna parte no trajo total, ya no hay
+   * contra qué.
+   */
   function handleComprobanteResuelto(datos: {
     emisor: Emisor;
     tipoCfe: string;
@@ -531,9 +528,6 @@ export function NuevoGastoForm({
       return;
     }
 
-    // Agregado: el encabezado del gasto es de la primera captura. Sólo se
-    // completa lo que todavía falta, y el total a cotejar es la suma de los
-    // comprobantes — si alguna parte no trajo total, ya no hay contra qué.
     if (!emisorSeleccionado) {
       seleccionarEmisor(datos.emisor);
     } else if (emisorSeleccionado.id !== datos.emisor.id) {
@@ -556,6 +550,11 @@ export function NuevoGastoForm({
     );
   }
 
+  /**
+   * Una foto no trae total validado, así que el que hubiera deja de cubrir
+   * todas las líneas y se descarta. En un agregado, el comercio ya elegido (o a
+   * medio escribir) no se pisa.
+   */
   async function handleTicketIAResuelto(ticket: ResultadoTicketIA) {
     const hayComercio = emisorSeleccionado !== null || emisorQuery.trim() !== "";
     const esAgregado = sumarLineasDeCaptura(
@@ -573,12 +572,9 @@ export function NuevoGastoForm({
         }))
       )
     );
-    // Una foto no trae total validado: lo que hubiera ya no cubre todas las
-    // líneas.
     setTotalComprobante(null);
     if (ticket.fecha && !esAgregado) setFecha(ticket.fecha);
 
-    // En un agregado el comercio ya elegido (o a medio escribir) no se pisa.
     if (ticket.comercio && !(esAgregado && hayComercio)) {
       setEmisorQuery(ticket.comercio);
       const encontrados = await buscarEmisores(ticket.comercio);
@@ -634,8 +630,6 @@ export function NuevoGastoForm({
     };
   }, [idsConReferencia, fecha, gastoInicial?.id]);
 
-  // La marca hormiga se hereda por ítem + comercio. No corre al editar un
-  // gasto guardado: ahí cada línea ya tiene la marca que el usuario le dejó.
   const emisorIdActual = emisorSeleccionado?.id ?? null;
   const esEdicionDeGasto = gastoInicial !== undefined;
   useEffect(() => {

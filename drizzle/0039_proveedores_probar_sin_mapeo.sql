@@ -1,0 +1,1 @@
+ALTER TABLE `proveedores_cfe` ADD `probar_sin_mapeo` integer DEFAULT false NOT NULL;

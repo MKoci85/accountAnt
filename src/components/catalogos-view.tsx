@@ -695,6 +695,11 @@ export function CatalogosView({
                           sin detalle de ítems
                         </Badge>
                       )}
+                      {p.probarSinMapeo && (
+                        <Badge variant="outline" className="text-[10.5px]">
+                          se prueba sin mapeo
+                        </Badge>
+                      )}
                     </div>
                     <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
                       {p.urlConsulta}

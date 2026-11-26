@@ -20,8 +20,10 @@ export const metadata: Metadata = {
   description: "Seguimiento personal de gastos hormiga",
 };
 
-// Lee la bandeja de entrada en cada pedido: prerenderizado, el aviso quedaría
-// congelado en lo que había al compilar.
+/**
+ * Lee la bandeja de entrada en cada pedido: prerenderizado, el aviso quedaría
+ * congelado en lo que había al compilar.
+ */
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

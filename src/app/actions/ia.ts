@@ -313,9 +313,7 @@ function extraerJSON(
   for (const c of candidatos) {
     try {
       return JSON.parse(c.trim());
-    } catch {
-      // continue
-    }
+    } catch {}
   }
   return undefined;
 }
@@ -329,6 +327,10 @@ function mensajeSinJSON(texto: string): string {
   return `El modelo no devolvió un JSON válido. Respondió: "${muestra}"`;
 }
 
+/**
+ * Un negativo es un descuento, salvo que sea el pago de la tarjeta: el prompt
+ * pide ignorarlo, pero si el modelo lo deja pasar se contaría como descuento.
+ */
 function validarMovimientos(crudo: unknown): MovimientoEstadoCuenta[] | null {
   if (!Array.isArray(crudo)) return null;
 
@@ -352,9 +354,6 @@ function validarMovimientos(crudo: unknown): MovimientoEstadoCuenta[] | null {
 
     const descripcion = String(o.descripcion ?? "").trim();
     if (!descripcion) continue;
-    // Un negativo es un descuento, salvo que sea el pago de la tarjeta: el
-    // prompt pide ignorarlo, pero si el modelo lo deja pasar se contaría como
-    // descuento.
     if (monto < 0 && esNoConsumo(descripcion)) continue;
 
     movimientos.push({

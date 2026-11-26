@@ -7,7 +7,8 @@ export const configuracion = sqliteTable("configuracion", {
 });
 
 export const cotizaciones = sqliteTable("cotizaciones", {
-  fecha: text("fecha").primaryKey(), // ISO 8601 (YYYY-MM-DD)
+  /** La fecha pedida; `fechaCotizacion` es la que cotizó el BCU, que puede ser anterior. */
+  fecha: text("fecha").primaryKey(),
   fechaCotizacion: text("fecha_cotizacion").notNull(),
   compra: real("compra").notNull(),
   venta: real("venta").notNull(),

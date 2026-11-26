@@ -14,25 +14,27 @@ export const LECTURAS_ENTRANTE = ["qr", "link", "ticket"] as const;
  */
 export const gastosEntrantes = sqliteTable("gastos_entrantes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  recibidoEn: text("recibido_en").notNull(), // ISO 8601
+  recibidoEn: text("recibido_en").notNull(),
   canal: text("canal", { enum: CANALES_ENTRANTE }).notNull().default("manual"),
-  // "error" = no se pudo leer nada útil todavía; se puede reintentar o descartar.
+  /** `"error"` = no se pudo leer nada útil todavía; se puede reintentar o descartar. */
   estado: text("estado", { enum: ESTADOS_ENTRANTE }).notNull(),
-  // Cómo se leyó: QR, link de DGI leído por IA, o el ticket entero leído por IA.
+  /** Cómo se leyó: QR, link de DGI leído por IA, o el ticket entero leído por IA. */
   lectura: text("lectura", { enum: LECTURAS_ENTRANTE }),
   imagenRuta: text("imagen_ruta"),
   qrTexto: text("qr_texto"),
-  // RUC|tipo|serie|número: la misma foto mandada dos veces no entra dos veces.
+  /** RUC|tipo|serie|número: la misma foto mandada dos veces no entra dos veces. */
   claveComprobante: text("clave_comprobante").unique(),
   emisorId: integer("emisor_id").references(() => emisores.id, {
     onDelete: "set null",
   }),
-  // Nombre del comercio tal como lo leyó la IA, cuando no hay RUC que lo resuelva.
+  /** Nombre del comercio tal como lo leyó la IA, cuando no hay RUC que lo resuelva. */
   comercio: text("comercio"),
-  fecha: text("fecha"), // ISO 8601 (YYYY-MM-DD)
+  fecha: text("fecha"),
   total: real("total"),
-  // Ítems tal como vinieron del comprobante, sin resolver contra el catálogo:
-  // eso se hace al abrir la revisión, con el catálogo de ese momento.
+  /**
+   * Ítems tal como vinieron del comprobante, sin resolver contra el catálogo:
+   * eso se hace al abrir la revisión, con el catálogo de ese momento.
+   */
   itemsJson: text("items_json").notNull().default("[]"),
   aviso: text("aviso"),
   error: text("error"),
@@ -47,9 +49,9 @@ export const gastosEntrantes = sqliteTable("gastos_entrantes", {
  */
 export const estadoCuentaBorrador = sqliteTable("estado_cuenta_borrador", {
   id: integer("id").primaryKey(),
-  creadoEn: text("creado_en").notNull(), // ISO 8601
+  creadoEn: text("creado_en").notNull(),
   movimientosJson: text("movimientos_json").notNull(),
-  // Si el PDF se leyó con IA: la revisión posterior abre el detalle de ítems.
+  /** Si el PDF se leyó con IA: la revisión posterior abre el detalle de ítems. */
   conIA: integer("con_ia", { mode: "boolean" }).notNull().default(false),
   estadoCuentaId: integer("estado_cuenta_id").references(() => estadosCuenta.id, {
     onDelete: "set null",
@@ -64,13 +66,17 @@ export const estadoCuentaBorrador = sqliteTable("estado_cuenta_borrador", {
  * rechazados).
  */
 export const mensajesWhatsapp = sqliteTable("mensajes_whatsapp", {
-  id: text("id").primaryKey(), // wamid de Meta
-  recibidoEn: text("recibido_en").notNull(), // ISO 8601
+  /** El wamid de Meta. */
+  id: text("id").primaryKey(),
+  recibidoEn: text("recibido_en").notNull(),
   remitente: text("remitente").notNull(),
-  // Lo que hace falta para volver a bajar la foto si el proceso se cortó antes
-  // de terminar de leerla. Null cuando el mensaje no era una imagen.
+  /**
+   * Lo que hace falta para volver a bajar la foto si el proceso se cortó antes
+   * de terminar de leerla. Null cuando el mensaje no era una imagen.
+   */
   mediaId: text("media_id"),
-  resultado: text("resultado"), // null = todavía procesando (o interrumpido)
+  /** Null = todavía procesando (o interrumpido). */
+  resultado: text("resultado"),
 });
 
 export const ORIGENES_ERROR_RECEPCION = ["whatsapp", "subida", "reintento"] as const;

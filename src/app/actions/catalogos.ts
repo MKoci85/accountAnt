@@ -18,7 +18,7 @@ import {
 } from "@/db/schema";
 import { and, asc, count, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import type { FormatoProveedorCfe } from "@/lib/procesadores";
+import { buscarProcesador, type FormatoProveedorCfe } from "@/lib/procesadores";
 import {
   agruparItemsSimilares,
   claveItemExacta,
@@ -263,30 +263,34 @@ export async function buscarItemPorNombreExacto(nombre: string) {
  * mismo comercio, que sigue mandando el texto original. Es una tabla y no una
  * columna porque cada comercio abrevia distinto: el mismo producto acumula un
  * alias por ticket que lo nombra de otra forma.
+ *
+ * El formulario la llama sin esperar ni mirar el resultado: un alias que no se
+ * pudo guardar sólo cuesta reconocer esa línea a mano en el próximo escaneo.
  * @returns Nada; un alias ya registrado no es un error.
  */
-export async function registrarAliasTicket(
+export const registrarAliasTicket = accion(async (
   itemCatalogoId: number,
   texto: string
-) {
+) => {
   const limpio = texto.trim();
   if (!limpio) return;
   await db
     .insert(itemsAliasTicket)
     .values({ itemCatalogoId, texto: limpio })
     .onConflictDoNothing();
-}
+});
 
 /**
  * Borra el alias que `registrarAliasTicket` aprendió, cuando el usuario deshace
  * la vinculación de esa línea del ticket. Es la operación exactamente inversa:
  * sin esto el próximo escaneo del mismo comercio volvería a reconocer mal la
- * línea, que es justo lo que el usuario acaba de corregir a mano.
+ * línea, que es justo lo que el usuario acaba de corregir a mano. Como
+ * `registrarAliasTicket`, el formulario no espera el resultado.
  */
-export async function borrarAliasTicket(
+export const borrarAliasTicket = accion(async (
   itemCatalogoId: number,
   texto: string
-) {
+) => {
   const limpio = texto.trim();
   if (!limpio) return;
   await db
@@ -297,7 +301,7 @@ export async function borrarAliasTicket(
         eq(itemsAliasTicket.texto, limpio)
       )
     );
-}
+});
 
 /**
  * Rechaza un ítem igual a otro ya existente (mismo nombre, marca y tamaño,
@@ -670,6 +674,24 @@ export async function listarProveedoresCfe() {
 }
 
 /**
+ * Los proveedores marcados para probar con un comprobante cuyo emisor no
+ * tiene proveedor mapeado. Sólo los de formato con consulta implementada: uno
+ * sin implementar contestaría siempre que no.
+ */
+export async function listarProveedoresParaProbar() {
+  const marcados = await db
+    .select()
+    .from(proveedoresCfe)
+    .where(eq(proveedoresCfe.probarSinMapeo, true))
+    .orderBy(asc(proveedoresCfe.nombre));
+  return marcados.filter((p) => buscarProcesador(p.formato)?.soportado);
+}
+
+function probarSiSoportado(formato: FormatoProveedorCfe, probar: boolean | undefined) {
+  return Boolean(probar) && Boolean(buscarProcesador(formato)?.soportado);
+}
+
+/**
  * Busca un proveedor de CFE por nombre (case-insensitive) o lo crea si no existe.
  * @returns El proveedor existente o el recién creado.
  */
@@ -677,6 +699,7 @@ export const obtenerOCrearProveedorCfe = accion(async (datos: {
   nombre: string;
   urlConsulta: string;
   formato: FormatoProveedorCfe;
+  probarSinMapeo?: boolean;
 }) => {
   const nombreLimpio = datos.nombre.trim();
   const urlLimpia = datos.urlConsulta.trim();
@@ -692,7 +715,12 @@ export const obtenerOCrearProveedorCfe = accion(async (datos: {
 
   const [creado] = await db
     .insert(proveedoresCfe)
-    .values({ nombre: nombreLimpio, urlConsulta: urlLimpia, formato: datos.formato })
+    .values({
+      nombre: nombreLimpio,
+      urlConsulta: urlLimpia,
+      formato: datos.formato,
+      probarSinMapeo: probarSiSoportado(datos.formato, datos.probarSinMapeo),
+    })
     .returning();
 
   revalidarCatalogos();
@@ -701,7 +729,12 @@ export const obtenerOCrearProveedorCfe = accion(async (datos: {
 
 export const editarProveedorCfe = accion(async (
   id: number,
-  datos: { nombre: string; urlConsulta: string; formato: FormatoProveedorCfe }
+  datos: {
+    nombre: string;
+    urlConsulta: string;
+    formato: FormatoProveedorCfe;
+    probarSinMapeo: boolean;
+  }
 ) => {
   const nombreLimpio = datos.nombre.trim();
   const urlLimpia = datos.urlConsulta.trim();
@@ -724,7 +757,12 @@ export const editarProveedorCfe = accion(async (
 
   const [proveedor] = await db
     .update(proveedoresCfe)
-    .set({ nombre: nombreLimpio, urlConsulta: urlLimpia, formato: datos.formato })
+    .set({
+      nombre: nombreLimpio,
+      urlConsulta: urlLimpia,
+      formato: datos.formato,
+      probarSinMapeo: probarSiSoportado(datos.formato, datos.probarSinMapeo),
+    })
     .where(eq(proveedoresCfe.id, id))
     .returning();
 

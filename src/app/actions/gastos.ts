@@ -246,9 +246,12 @@ export async function guardarGasto(
   }
 }
 
+/**
+ * Alta desde el formulario. El bloqueo por mes es de la carga manual: resolver
+ * un entrante es justo lo que lo destraba, y pagar un gasto fijo va por
+ * `guardarGasto` y no pasa por acá.
+ */
 export const crearGasto = accion(async (datos: NuevoGastoDatos) => {
-  // El bloqueo por mes es de la carga manual: resolver un entrante es justo lo
-  // que lo destraba, y pagar un gasto fijo va por `guardarGasto` y no pasa por acá.
   if (!datos.entranteId && (await resumenDeBandeja()).bloqueada) {
     throw new Error(MENSAJE_BLOQUEO_POR_MES);
   }
@@ -263,6 +266,7 @@ export const crearGasto = accion(async (datos: NuevoGastoDatos) => {
   redirect("/gastos");
 });
 
+/** Guardar desde el formulario es haberlo revisado: limpia `sinRevisar`. */
 export const editarGasto = accion(async (
   id: number,
   datos: {
@@ -279,7 +283,6 @@ export const editarGasto = accion(async (
   const items = await conSobreprecioDetectado(datos.items, datos.fecha, id);
 
   db.transaction((tx) => {
-    // Guardar desde el formulario es haberlo revisado.
     tx.update(gastos)
       .set({ fecha: datos.fecha, emisorId: datos.emisorId, sinRevisar: false })
       .where(eq(gastos.id, id))

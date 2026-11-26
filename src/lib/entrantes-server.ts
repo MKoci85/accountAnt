@@ -1,3 +1,9 @@
+/**
+ * Almacenamiento de la bandeja: filas y fotos. Deliberadamente sin "use server"
+ * (escribe en disco y recibe Buffers) y sin importar ninguna acción:
+ * `actions/gastos.ts` depende de esto, y la lectura de comprobantes
+ * (`entrantes-recepcion.ts`) depende de `actions/gastos.ts`.
+ */
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -26,15 +32,12 @@ import {
 } from "@/lib/entrantes";
 import { PREFIJO_REINTENTO } from "@/lib/whatsapp";
 
-// Almacenamiento de la bandeja: filas y fotos. Deliberadamente sin "use
-// server" (escribe en disco y recibe Buffers) y sin importar ninguna acción:
-// `actions/gastos.ts` depende de esto, y la lectura de comprobantes
-// (`entrantes-recepcion.ts`) depende de `actions/gastos.ts`.
-
 const DIRECTORIO_IMAGENES = path.join(process.cwd(), "data", "entrantes");
 
-// En la base va sólo el nombre del archivo: `basename` evita que un valor
-// alterado apunte fuera del directorio.
+/**
+ * En la base va sólo el nombre del archivo: `basename` evita que un valor
+ * alterado apunte fuera del directorio.
+ */
 function rutaImagen(archivo: string): string {
   return path.join(DIRECTORIO_IMAGENES, path.basename(archivo));
 }
@@ -53,9 +56,7 @@ export async function guardarImagenEntrante(id: number, imagen: Buffer) {
       .set({ imagenRuta: archivo })
       .where(eq(gastosEntrantes.id, id))
       .run();
-  } catch {
-    // sin foto guardada
-  }
+  } catch {}
 }
 
 export async function leerImagenEntrante(archivo: string): Promise<Buffer | null> {

@@ -81,9 +81,6 @@ export function LineaGastoFila({
     !linea.sinCatalogo && (linea.item.id <= 0 || esGenericaEditable);
   const nombreEditable = linea.sinCatalogo || necesitaCatalogo;
   const vieneDelTicket = linea.item.id <= 0;
-  // Una línea del ticket ya vinculada al catálogo: el buscador desapareció, así
-  // que sin este botón corregir una elección equivocada obliga a borrar la
-  // línea entera y volver a tipear lo que el comprobante ya había traído.
   const puedeDesvincular =
     linea.origenTicket !== undefined && linea.item.id > 0;
   const eligeUnidad =

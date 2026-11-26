@@ -323,7 +323,7 @@ export async function obtenerReporte(filtros: FiltrosReporte) {
     { mes: string; total: number; hormiga: number; sobreprecio: number; sobreprecioEnHormiga: number }
   >();
   for (const linea of lineas) {
-    const mes = linea.fecha.slice(0, 7); // YYYY-MM
+    const mes = linea.fecha.slice(0, 7);
     let m = porMes.get(mes);
     if (!m) {
       m = { mes, total: 0, hormiga: 0, sobreprecio: 0, sobreprecioEnHormiga: 0 };

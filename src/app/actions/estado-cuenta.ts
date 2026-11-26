@@ -679,7 +679,8 @@ async function cotejarMovimientos(
 
 /**
  * Cruza contra la bandeja sólo los movimientos que se importarían: uno que ya
- * matchea un gasto cargado no va a crear nada, así que no puede duplicar.
+ * matchea un gasto cargado no va a crear nada, así que no puede duplicar. Un
+ * entrante sin total validado (un ticket leído por IA) vale la suma de lo leído.
  */
 async function conflictosConBandeja(
   lineas: LineaAnalizada[],
@@ -689,7 +690,6 @@ async function conflictosConBandeja(
     const items = parsearItemsEntrante(e.itemsJson);
     return {
       ...e,
-      // Un ticket leído por IA no trae total validado: vale la suma de lo leído.
       total:
         e.total ??
         (items.length

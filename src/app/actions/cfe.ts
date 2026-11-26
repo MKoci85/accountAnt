@@ -5,6 +5,7 @@ import {
   validarConDgi,
   consultarProcesador,
   fechaISODesdeQR,
+  detalleCorrespondeAlQR,
   type DatosQR,
   type DetalleComprobante,
 } from "@/lib/cfe";
@@ -15,7 +16,13 @@ import {
   crearEmisorPorRuc,
   buscarItemPorNombreExacto,
   sugerirCategoriaPorTexto,
+  listarProveedoresParaProbar,
 } from "@/app/actions/catalogos";
+import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { emisores as tablaEmisores } from "@/db/schema";
+import { normalizarTextoComparable } from "@/lib/duplicados";
 import {
   interpretarTicketConIA,
   type FuenteIA,
@@ -49,6 +56,11 @@ export type ResultadoConsultaCFE = {
   items: ItemTicket[];
   total: number | null;
   errorProveedor: string | null;
+  /**
+   * Nombre del proveedor que trajo el detalle cuando el emisor no tenía uno y
+   * se encontró probando los marcados: quedó asignado al emisor.
+   */
+  proveedorDetectado: string | null;
   monedaOriginal: string | null;
   totalMonedaOriginal: number | null;
   avisoMoneda: string | null;
@@ -93,39 +105,29 @@ export async function consultarCFE(qrTexto: string): Promise<RespuestaConsultaCF
   }
 
   const emisorExistente = await obtenerEmisorPorRuc(datosQR.ruc);
-  const emisor =
+  let emisor =
     emisorExistente ??
-    (await crearEmisorPorRuc({ ruc: datosQR.ruc, nombre: `RUC ${datosQR.ruc}` }));
+    (await crearEmisorPorRuc({ ruc: datosQR.ruc, nombre: nombreProvisorio(datosQR.ruc) }));
 
-  let detalle: DetalleComprobante | null = null;
-  let errorProveedor: string | null = null;
+  const consulta = await obtenerDetalle(emisor.id, datosQR);
+  const { errorProveedor, proveedorDetectado } = consulta;
+  let detalle = consulta.detalle;
   let monedaOriginal: string | null = null;
   let totalMonedaOriginal: number | null = null;
   let avisoMoneda: string | null = null;
 
-  const conProveedor = await obtenerEmisorConProveedor(emisor.id);
-  const urlConsulta = conProveedor?.urlConsulta ?? null;
-  const formato = conProveedor?.formato ?? null;
-
-  if (urlConsulta && formato) {
-    try {
-      detalle = await consultarProcesador(urlConsulta, datosQR, formato);
-      if (detalle.total !== null && !Number.isFinite(detalle.total)) {
-        detalle = { ...detalle, total: null };
-      }
-      if (detalle.moneda && detalle.moneda !== "UYU") {
-        monedaOriginal = detalle.moneda;
-        totalMonedaOriginal = detalle.total;
-        const conversion = await convertirAPesos(detalle, datosQR.fecha);
-        detalle = conversion.detalle;
-        avisoMoneda = conversion.error;
-      }
-    } catch (e) {
-      errorProveedor =
-        e instanceof Error ? e.message : "No se pudo consultar el proveedor";
+  if (detalle) {
+    emisor = await completarEmisor(emisor, detalle, proveedorDetectado?.id ?? null);
+    if (detalle.total !== null && !Number.isFinite(detalle.total)) {
+      detalle = { ...detalle, total: null };
     }
-  } else {
-    errorProveedor = "Este emisor todavía no tiene un proveedor de CFE mapeado";
+    if (detalle.moneda && detalle.moneda !== "UYU") {
+      monedaOriginal = detalle.moneda;
+      totalMonedaOriginal = detalle.total;
+      const conversion = await convertirAPesos(detalle, datosQR.fecha);
+      detalle = conversion.detalle;
+      avisoMoneda = conversion.error;
+    }
   }
 
   const items: ItemTicket[] = await Promise.all(
@@ -152,11 +154,131 @@ export async function consultarCFE(qrTexto: string): Promise<RespuestaConsultaCF
       items,
       total: detalle?.total ?? null,
       errorProveedor,
+      proveedorDetectado: proveedorDetectado?.nombre ?? null,
       monedaOriginal,
       totalMonedaOriginal,
       avisoMoneda,
     },
   };
+}
+
+function nombreProvisorio(ruc: string) {
+  return `RUC ${ruc}`;
+}
+
+type Detalle = {
+  detalle: DetalleComprobante | null;
+  errorProveedor: string | null;
+  proveedorDetectado: { id: number; nombre: string } | null;
+};
+
+/**
+ * El detalle del comprobante: del proveedor mapeado al emisor, o — si no
+ * tiene — del primero de los marcados para probar que lo reconozca. Un
+ * proveedor mapeado que falla no da pie a probar otros: el mapeo es del
+ * usuario, y que hoy no conteste no lo desmiente.
+ */
+async function obtenerDetalle(emisorId: number, datosQR: DatosQR): Promise<Detalle> {
+  const conProveedor = await obtenerEmisorConProveedor(emisorId);
+  if (conProveedor?.urlConsulta && conProveedor.formato) {
+    try {
+      return {
+        detalle: await consultarProcesador(
+          conProveedor.urlConsulta,
+          datosQR,
+          conProveedor.formato
+        ),
+        errorProveedor: null,
+        proveedorDetectado: null,
+      };
+    } catch (e) {
+      return {
+        detalle: null,
+        errorProveedor:
+          e instanceof Error ? e.message : "No se pudo consultar el proveedor",
+        proveedorDetectado: null,
+      };
+    }
+  }
+
+  const candidatos = await listarProveedoresParaProbar();
+  const respuestas = await Promise.all(
+    candidatos.map((p) =>
+      consultarProcesador(p.urlConsulta, datosQR, p.formato)
+        .then((d) => (detalleCorrespondeAlQR(d, datosQR) ? d : null))
+        .catch(() => null)
+    )
+  );
+  const i = respuestas.findIndex((r) => r !== null);
+  if (i >= 0) {
+    return {
+      detalle: respuestas[i],
+      errorProveedor: null,
+      proveedorDetectado: { id: candidatos[i].id, nombre: candidatos[i].nombre },
+    };
+  }
+
+  const sinMapeo = "Este emisor todavía no tiene un proveedor de CFE mapeado";
+  return {
+    detalle: null,
+    errorProveedor:
+      candidatos.length === 0
+        ? sinMapeo
+        : `${sinMapeo} (se probó con ${listaDeNombres(candidatos.map((c) => c.nombre))} y no lo reconoció ninguno)`,
+    proveedorDetectado: null,
+  };
+}
+
+function listaDeNombres(nombres: string[]) {
+  return nombres.length === 1
+    ? nombres[0]
+    : `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
+}
+
+/**
+ * Lo que el detalle le enseña al emisor: el proveedor detectado probando, y su
+ * nombre si todavía tiene el provisorio "RUC …" con que lo crea el QR. El
+ * nombre no se toma si otro comercio ya se llama así (ese caso se resuelve
+ * fusionándolos desde /catalogos, no duplicando el nombre).
+ */
+async function completarEmisor(
+  emisor: Emisor,
+  detalle: DetalleComprobante,
+  proveedorId: number | null
+): Promise<Emisor> {
+  const cambios: Partial<Pick<Emisor, "nombre" | "proveedorCfeId">> = {};
+  if (proveedorId !== null && emisor.proveedorCfeId === null) {
+    cambios.proveedorCfeId = proveedorId;
+  }
+
+  const nombre = detalle.emisorNombre.trim();
+  if (
+    /^RUC \d+$/.test(emisor.nombre) &&
+    nombre &&
+    nombre !== "Comercio desconocido" &&
+    (await nombreLibre(nombre, emisor.id))
+  ) {
+    cambios.nombre = nombre;
+  }
+
+  if (Object.keys(cambios).length === 0) return emisor;
+  const [actualizado] = await db
+    .update(tablaEmisores)
+    .set(cambios)
+    .where(eq(tablaEmisores.id, emisor.id))
+    .returning();
+  revalidatePath("/catalogos");
+  return actualizado ?? emisor;
+}
+
+async function nombreLibre(nombre: string, idExcluido: number) {
+  const buscado = normalizarTextoComparable(nombre);
+  const todos = await db
+    .select({ id: tablaEmisores.id, nombre: tablaEmisores.nombre })
+    .from(tablaEmisores);
+  return !todos.some(
+    (e) => e.id !== idExcluido && normalizarTextoComparable(e.nombre) === buscado
+  );
 }
 
 async function convertirAPesos(

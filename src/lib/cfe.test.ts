@@ -17,6 +17,7 @@ const {
   parsearMontoFlexible,
   parsearResultadoUcfe,
   totalPdfUcfe,
+  detalleCorrespondeAlQR,
 } = await import("@/lib/cfe");
 
 const PAYLOAD = "212345670012,101,A,1234,500.00,2026-09-03,ABC123";
@@ -85,6 +86,39 @@ describe("montoDesdeQR", () => {
     expect(montoDesdeQR("1753.40")).toBe(1753.4);
     expect(montoDesdeQR("0")).toBeNull();
     expect(montoDesdeQR("1.753,40")).toBeNull();
+  });
+});
+
+describe("detalleCorrespondeAlQR", () => {
+  const datos = parsearQR(PAYLOAD);
+  const item = {
+    nombre: "PAN",
+    tamano: null,
+    unidades: 1,
+    precio: 500,
+    pesoTicket: null,
+    precioPorKiloTicket: null,
+  };
+  const detalle = (items: (typeof item)[], total: number | null) => ({
+    emisorNombre: "COMERCIO",
+    direccion: null,
+    items,
+    total,
+    moneda: null,
+  });
+
+  it("acepta ítems con el total del QR, o sólo el total si no trajo ítems", () => {
+    expect(detalleCorrespondeAlQR(detalle([item], 500.4), datos)).toBe(true);
+    expect(detalleCorrespondeAlQR(detalle([], 500), datos)).toBe(true);
+  });
+
+  it("rechaza un total distinto aunque traiga ítems", () => {
+    expect(detalleCorrespondeAlQR(detalle([item], 750), datos)).toBe(false);
+  });
+
+  it("rechaza una respuesta vacía, que es cómo algunos dicen que no lo conocen", () => {
+    expect(detalleCorrespondeAlQR(detalle([], null), datos)).toBe(false);
+    expect(detalleCorrespondeAlQR(detalle([], Number.NaN), datos)).toBe(false);
   });
 });
 

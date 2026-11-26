@@ -27,8 +27,10 @@ import type { LineaDesdeTicket } from "@/components/escaner-comprobante";
 type Entrante = typeof gastosEntrantes.$inferSelect;
 type Emisor = typeof emisores.$inferSelect;
 
-// La bandeja se ve desde el aviso del layout, y un comprobante puede haber
-// terminado como gasto: se revalida todo.
+/**
+ * La bandeja se ve desde el aviso del layout, y un comprobante puede haber
+ * terminado como gasto: se revalida todo.
+ */
 function revalidarBandeja() {
   revalidatePath("/", "layout");
 }
@@ -49,6 +51,7 @@ export type EntranteListado = {
   lectura: Entrante["lectura"];
   comercio: string | null;
   fecha: string | null;
+  /** Sin total validado, la suma de lo leído. */
   total: number | null;
   cantidadItems: number;
   /** Ítems que todavía no matchean con nada del catálogo. */
@@ -77,7 +80,6 @@ export async function listarEntrantes(): Promise<EntranteListado[]> {
         lectura: entrante.lectura,
         comercio: emisorNombre ?? entrante.comercio,
         fecha: entrante.fecha,
-        // Sin total validado se muestra la suma de lo leído.
         total:
           entrante.total ??
           (items.length
@@ -138,7 +140,8 @@ export type EntranteParaRevision = {
 /**
  * Arma lo que el formulario de gasto necesita para precargarse desde un
  * entrante. Los ítems se resuelven contra el catálogo acá, no al recibir la
- * foto: un alias aprendido después de recibirla ya cuenta.
+ * foto: un alias aprendido después de recibirla ya cuenta. El comercio que
+ * viene sólo como nombre leído de la foto se busca, nunca se crea.
  * @returns null si el entrante no existe o todavía no se pudo leer.
  */
 export async function obtenerEntranteParaRevision(
@@ -157,7 +160,6 @@ export async function obtenerEntranteParaRevision(
       db.select().from(emisores).where(eq(emisores.id, entrante.emisorId)).get() ??
       null;
   } else if (entrante.comercio) {
-    // El nombre viene de una foto: se busca, nunca se crea.
     const nombre = entrante.comercio.toLowerCase();
     emisor =
       (await buscarEmisores(entrante.comercio)).find(

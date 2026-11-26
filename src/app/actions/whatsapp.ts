@@ -111,14 +111,6 @@ export const guardarCampoWhatsapp = accion(async (campo: CampoWhatsapp, valor: s
   revalidatePath("/ajustes");
 });
 
-export async function borrarSecretoWhatsapp(campo: "token" | "appSecret") {
-  if (campo !== "token" && campo !== "appSecret") {
-    throw new Error("Campo de WhatsApp desconocido");
-  }
-  await escribirConfigWhatsapp(campo, null);
-  revalidatePath("/ajustes");
-}
-
 export const guardarActivoWhatsapp = accion(async (activo: boolean) => {
   await escribirConfigWhatsapp("activo", activo ? "1" : null);
   revalidatePath("/ajustes");

@@ -23,6 +23,9 @@ export const proveedoresCfe = sqliteTable("proveedores_cfe", {
   formato: text("formato", { enum: FORMATOS_PROVEEDOR_CFE })
     .notNull()
     .default("otro"),
+  probarSinMapeo: integer("probar_sin_mapeo", { mode: "boolean" })
+    .notNull()
+    .default(false),
 });
 
 export const emisores = sqliteTable("emisores", {
